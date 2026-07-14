@@ -1,0 +1,42 @@
+{
+    "name": "omnisocials/omnisocials-php",
+    "description": "Official PHP SDK for the OmniSocials API. Schedule and publish posts to Instagram, Facebook, LinkedIn, YouTube, TikTok, X, Pinterest, Bluesky, Threads, Mastodon, and Google Business from one API.",
+    "version": "0.1.0",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "omnisocials",
+        "social-media",
+        "api",
+        "sdk",
+        "scheduling",
+        "instagram",
+        "facebook",
+        "linkedin",
+        "tiktok",
+        "youtube"
+    ],
+    "homepage": "https://docs.omnisocials.com",
+    "authors": [
+        {
+            "name": "OmniSocials",
+            "homepage": "https://omnisocials.com"
+        }
+    ],
+    "support": {
+        "docs": "https://docs.omnisocials.com"
+    },
+    "require": {
+        "php": ">=8.1",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "OmniSocials\\": "src/"
+        }
+    },
+    "scripts": {
+        "smoke": "php scripts/smoke.php"
+    }
+}
