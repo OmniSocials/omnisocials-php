@@ -34,6 +34,7 @@ class Client
     public readonly Resource\Folders $folders;
     public readonly Resource\Accounts $accounts;
     public readonly Resource\Analytics $analytics;
+    public readonly Resource\Audio $audio;
     public readonly Resource\Locations $locations;
     public readonly Resource\Webhooks $webhooks;
 
@@ -79,6 +80,7 @@ class Client
         $this->folders = new Resource\Folders($this);
         $this->accounts = new Resource\Accounts($this);
         $this->analytics = new Resource\Analytics($this);
+        $this->audio = new Resource\Audio($this);
         $this->locations = new Resource\Locations($this);
         $this->webhooks = new Resource\Webhooks($this);
     }
