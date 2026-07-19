@@ -312,6 +312,46 @@ if (!empty($check['valid'])) {
 }
 ```
 
+## Social Inbox
+
+DMs, comments, and mentions from Instagram, Facebook, and LinkedIn in one place. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere.
+
+```php
+// List conversations (all filters optional)
+$conversations = $client->inbox->listConversations([
+    'platform' => 'instagram', // instagram | facebook | linkedin
+    'type' => 'dm',            // dm | comment | mention
+    'unread' => true,
+    'limit' => 25,             // 1-100
+]);
+
+foreach ($conversations['data'] as $conversation) {
+    // Full message history for one conversation.
+    // LinkedIn ids contain ":" and "()" - they are URL-encoded for you.
+    $messages = $client->inbox->getMessages($conversation['id']);
+
+    // Mark the whole conversation as read.
+    $client->inbox->markRead($conversation['id']);
+
+    // Reply (text required; attachment optional).
+    $client->inbox->reply($conversation['id'], [
+        'text' => 'Thanks for reaching out!',
+        'attachment_url' => 'https://example.com/reply.jpg',
+        'attachment_type' => 'image', // image | video | audio | file
+    ]);
+}
+
+// Page through with the cursor.
+$cursor = $conversations['pagination']['next_cursor'] ?? null;
+while ($cursor !== null) {
+    $page = $client->inbox->listConversations(['cursor' => $cursor]);
+    // ... handle $page['data'] ...
+    $cursor = ($page['pagination']['has_more'] ?? false)
+        ? $page['pagination']['next_cursor']
+        : null;
+}
+```
+
 ## Webhooks
 
 ### Manage endpoints
