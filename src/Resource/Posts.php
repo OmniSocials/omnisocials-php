@@ -61,6 +61,14 @@ class Posts extends AbstractResource
      * `['thread_parts' => [['text' => '...'], ...]]` (2 to 25 parts) to
      * publish a chained thread.
      *
+     * Each `media_urls` / `media_ids` entry is a plain string, or an array
+     * with an `alt` accessibility description (max 1500 chars):
+     * `['url' => 'https://...', 'alt' => '...']` for media_urls,
+     * `['id' => '...', 'alt' => '...']` for media_ids. Alt text is delivered
+     * to Mastodon (media description), Bluesky (embed alt), X (photos/GIFs),
+     * and Pinterest (pin alt text); the same entry shape works inside
+     * `thread_parts` media.
+     *
      * @param array<string, mixed> $params
      */
     public function create(array $params): mixed

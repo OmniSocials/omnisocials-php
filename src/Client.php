@@ -24,7 +24,7 @@ use OmniSocials\Exception\AuthenticationException;
  */
 class Client
 {
-    public const VERSION = '0.1.0';
+    public const VERSION = '0.2.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
@@ -32,6 +32,7 @@ class Client
     public readonly Resource\Posts $posts;
     public readonly Resource\Media $media;
     public readonly Resource\Folders $folders;
+    public readonly Resource\HashtagSets $hashtagSets;
     public readonly Resource\Accounts $accounts;
     public readonly Resource\Analytics $analytics;
     public readonly Resource\Audio $audio;
@@ -79,6 +80,7 @@ class Client
         $this->posts = new Resource\Posts($this);
         $this->media = new Resource\Media($this);
         $this->folders = new Resource\Folders($this);
+        $this->hashtagSets = new Resource\HashtagSets($this);
         $this->accounts = new Resource\Accounts($this);
         $this->analytics = new Resource\Analytics($this);
         $this->audio = new Resource\Audio($this);
