@@ -114,4 +114,16 @@ class Posts extends AbstractResource
     {
         return $this->client->post('/posts/' . $this->encodePathSegment($id) . '/publish');
     }
+
+    /**
+     * `POST /posts/:id/retry` - retry the failed platforms of a `failed` or
+     * `warning` (partially failed) post, on the same post. Only the platforms
+     * that failed are re-published; platforms that already succeeded are
+     * never posted again. Asynchronous: a 200 means the retry is queued -
+     * poll `get()` for the outcome. Max 3 retries per platform.
+     */
+    public function retry(string $id): mixed
+    {
+        return $this->client->post('/posts/' . $this->encodePathSegment($id) . '/retry');
+    }
 }

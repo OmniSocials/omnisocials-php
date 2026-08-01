@@ -150,7 +150,7 @@ $client->posts->create([
 
 On update, pass `'thread_parts' => null` to clear thread mode (revert to a single post); leave the key out to keep the existing thread untouched.
 
-### List, get, update, publish, delete
+### List, get, update, publish, retry, delete
 
 ```php
 $page = $client->posts->list(['status' => 'scheduled', 'limit' => 50]);
@@ -159,8 +159,11 @@ $posts = $page['data'];
 $one = $client->posts->get($posts[0]['id']);
 $client->posts->update($one['data']['id'], ['scheduled_at' => '2026-08-02T10:00:00Z']);
 $client->posts->publish($one['data']['id']); // publish a draft/scheduled post now
+$client->posts->retry($one['data']['id']);   // retry only the failed platforms of a failed/warning post
 $client->posts->delete($one['data']['id']);  // returns null (204)
 ```
+
+`retry` re-publishes only the platforms that failed, on the same post; platforms that already succeeded are never posted again. It is asynchronous: a 200 means the retry is queued, so poll `get` for the outcome. Max 3 retries per platform.
 
 ### Recent platform posts
 
