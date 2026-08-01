@@ -98,7 +98,7 @@ $client->posts->createAndPublish([
 
 ### Per-media alt text
 
-Every `media_urls` / `media_ids` entry accepts either a plain string or an array with an `alt` accessibility description (max 1500 chars). Alt text is delivered to Mastodon (media description), Bluesky (embed alt), X (photos and GIFs), and Pinterest (pin alt text). Strings and arrays can be mixed, and the same shape works in per-platform maps and `thread_parts` media.
+Every `media_urls` / `media_ids` entry accepts either a plain string or an array with an `alt` accessibility description (max 1500 chars). Alt text is delivered to Mastodon (media description), Bluesky (embed alt), X (photos and GIFs), Pinterest (pin alt text), Instagram (images), and LinkedIn (images). Strings and arrays can be mixed, and the same shape works in per-platform maps and `thread_parts` media.
 
 ```php
 $client->posts->create([
@@ -167,7 +167,7 @@ $client->posts->delete($one['data']['id']);  // returns null (204)
 
 ### Recent platform posts
 
-Fetch recent posts live from the connected platform APIs, including content published outside OmniSocials. Useful for brand-new workspaces where `list()` is empty. Requires the `analytics:read` scope.
+Fetch recent posts live from the connected platform APIs, including content published outside OmniSocials. Useful for brand-new workspaces where `list()` is empty. Requires the `analytics:read` scope. Each record includes `duration_seconds` (integer, nullable): the video length in whole seconds where the platform reports it — currently TikTok and YouTube; `null` for images and for platforms that don't expose it.
 
 ```php
 $recent = $client->posts->recentPlatform(['limit' => 10, 'platforms' => ['instagram', 'x']]);
