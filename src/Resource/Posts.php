@@ -69,6 +69,13 @@ class Posts extends AbstractResource
      * Pinterest (pin alt text), Instagram (images), and LinkedIn (images);
      * the same entry shape works inside `thread_parts` media.
      *
+     * When the post targets X and its text (or any thread part) contains a
+     * URL, the response includes a top-level `warnings` array (sibling of
+     * `data`) with a `x_url_post_credits` entry carrying `credits_required`
+     * and `credits_balance`: X's link-post fee is passed through as prepaid
+     * credits, debited at publish time (from 2026-08-14). Credits are
+     * managed in the dashboard, not the API.
+     *
      * @param array<string, mixed> $params
      */
     public function create(array $params): mixed
@@ -78,7 +85,8 @@ class Posts extends AbstractResource
 
     /**
      * `POST /posts/create-and-publish` - create a post and publish it
-     * immediately. Same params as `create()` minus `scheduled_at`.
+     * immediately. Same params as `create()` minus `scheduled_at`; see
+     * `create()` for the `warnings` array on X link posts.
      *
      * @param array<string, mixed> $params
      */
