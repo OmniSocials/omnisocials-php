@@ -18,7 +18,7 @@ class Inbox extends AbstractResource
      * when `has_more` is false.
      *
      * @param array{
-     *     platform?: 'instagram'|'facebook'|'linkedin',
+     *     platform?: 'instagram'|'facebook'|'linkedin'|'x',
      *     type?: 'dm'|'comment'|'mention',
      *     unread?: bool,
      *     limit?: int,
@@ -76,6 +76,16 @@ class Inbox extends AbstractResource
      * conversation. Returns the created message as `{ data: InboxMessage }`.
      *
      * `$conversationId` is URL-encoded for you.
+     *
+     * X DM replies cost 2 prepaid credits per send (X's send fee, passed
+     * through at cost), debited before the send and auto-refunded if the
+     * send fails. Two 402 error codes are specific to this endpoint, thrown
+     * as an `ApiException` with `getErrorCode()`:
+     * - `insufficient_credits` - the company balance can't cover the 2
+     *   credits.
+     * - `x_inbox_suspended` - the workspace's X inbox auto-suspended after
+     *   the balance hit zero; top up and re-enable it in the dashboard to
+     *   resume. DMs that arrived while suspended are not recovered.
      *
      * @param array{
      *     text: string,

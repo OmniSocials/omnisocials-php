@@ -168,6 +168,27 @@ foreach ($res['warnings'] ?? [] as $warning) {
 
 From `enforce_from` (2026-08-14) the balance is checked at publish time, but credits are only deducted after the post successfully publishes (a failed publish is never charged). If the balance can't cover it, only the X target fails (other platforms publish normally); top up in the dashboard under Settings -> Organisation -> Billing -> Credits, then call `posts->retry()`. Posts without links, analytics, and media on X stay free. There is no API endpoint for credits — they are managed in the dashboard.
 
+Separately, every scheduled X link post *reserves* its cost up front. `posts->create()`, `posts->update()`, and `posts->publish()` refuse the request with a `402` `ApiException` whose error code is `x_credits_insufficient` when reserving this post's cost would push the company's total reserved credits past its balance:
+
+```php
+use OmniSocials\Exception\ApiException;
+
+try {
+    $client->posts->create([
+        'content' => 'Read the full story: https://example.com/post',
+        'channels' => ['x'],
+        'scheduled_at' => '2026-08-15T09:00:00Z',
+    ]);
+} catch (ApiException $e) {
+    if ($e->getErrorCode() === 'x_credits_insufficient') {
+        $details = $e->getBody()['error']['details'] ?? [];
+        echo "Needs {$details['credits_required']} credits, only {$details['credits_balance']} free ({$details['credits_reserved']} already reserved)\n";
+    }
+}
+```
+
+Drafts are never gated (the gate runs when a draft is scheduled or published), and posts publishing before 2026-08-14 are never gated.
+
 ### List, get, update, publish, retry, delete
 
 ```php
@@ -388,7 +409,7 @@ DMs, comments, and mentions from Instagram, Facebook, and LinkedIn in one place.
 ```php
 // List conversations (all filters optional)
 $conversations = $client->inbox->listConversations([
-    'platform' => 'instagram', // instagram | facebook | linkedin
+    'platform' => 'instagram', // instagram | facebook | linkedin | x
     'type' => 'dm',            // dm | comment | mention
     'unread' => true,
     'limit' => 25,             // 1-100
@@ -420,6 +441,26 @@ while ($cursor !== null) {
         : null;
 }
 ```
+
+### X DM replies use credits
+
+X DM conversations (`platform` = `x`, `type` always `dm`) cost credits to reply to: each `reply()` send debits **2 prepaid credits** (X's send fee, passed through at cost) before sending, auto-refunded if the send fails. Two `402` error codes are specific to `reply()`:
+
+```php
+use OmniSocials\Exception\ApiException;
+
+try {
+    $client->inbox->reply($conversation['id'], ['text' => 'Thanks for the DM!']);
+} catch (ApiException $e) {
+    if ($e->getErrorCode() === 'insufficient_credits') {
+        echo "Balance can't cover the 2-credit send, top up in the dashboard\n";
+    } elseif ($e->getErrorCode() === 'x_inbox_suspended') {
+        echo "This workspace's X inbox is suspended, top up and re-enable it to resume\n";
+    }
+}
+```
+
+`insufficient_credits` means the company balance can't cover the 2 credits. `x_inbox_suspended` means the workspace's X inbox auto-suspended after the balance hit zero; top up and re-enable it in the dashboard to resume — DMs that arrived while suspended are not recovered. Same balance and top-up flow as "X link posts use credits" above.
 
 ## Webhooks
 

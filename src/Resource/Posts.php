@@ -76,6 +76,15 @@ class Posts extends AbstractResource
      * credits, debited at publish time (from 2026-08-14). Credits are
      * managed in the dashboard, not the API.
      *
+     * Separately, every scheduled X link post reserves its cost up front.
+     * A non-draft `create()` (also `update()` and `publish()`) throws an
+     * `ApiException` with status 402 and error code `x_credits_insufficient`
+     * (`getBody()['error']['details']` carries `credits_required`,
+     * `credits_balance`, `credits_reserved`) when reserving this post's cost
+     * would push the company's total reserved credits past its balance.
+     * Drafts are never gated, and posts publishing before 2026-08-14 are
+     * never gated.
+     *
      * @param array<string, mixed> $params
      */
     public function create(array $params): mixed
@@ -86,7 +95,8 @@ class Posts extends AbstractResource
     /**
      * `POST /posts/create-and-publish` - create a post and publish it
      * immediately. Same params as `create()` minus `scheduled_at`; see
-     * `create()` for the `warnings` array on X link posts.
+     * `create()` for the `warnings` array and the `x_credits_insufficient`
+     * schedule-time gate on X link posts.
      *
      * @param array<string, mixed> $params
      */
@@ -99,6 +109,9 @@ class Posts extends AbstractResource
      * `PATCH /posts/:id` - update a draft or scheduled post. For X / Bluesky /
      * Mastodon, `['thread_parts' => null]` clears thread mode (revert to a
      * single post); omitting the key leaves the existing thread untouched.
+     *
+     * Scheduling or editing an X link post can throw the same `402
+     * x_credits_insufficient` gate described on `create()`.
      *
      * @param array<string, mixed> $params
      */
@@ -117,6 +130,9 @@ class Posts extends AbstractResource
 
     /**
      * `POST /posts/:id/publish` - publish a draft or scheduled post now.
+     * Can throw the `402 x_credits_insufficient` gate described on
+     * `create()` if publishing this X link post would push reserved
+     * credits past the company's balance.
      */
     public function publish(string $id): mixed
     {
