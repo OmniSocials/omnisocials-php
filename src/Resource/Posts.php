@@ -54,12 +54,19 @@ class Posts extends AbstractResource
      *
      * Common params: `content` (string, or array keyed by platform plus
      * "default"), `channels`, `scheduled_at`, `media_ids`, `media_urls`,
-     * `type`, `link_url`, `location_id`, `collaborators`, `user_tags`, and
-     * per-platform option arrays (`instagram`, `facebook`, `linkedin`,
-     * `linkedin_page`, `youtube`, `tiktok`, `pinterest`, `x`, `bluesky`,
-     * `mastodon`, `google_business`). For X / Bluesky / Mastodon, pass
-     * `['thread_parts' => [['text' => '...'], ...]]` (2 to 25 parts) to
+     * `type`, `link_url`, `location_id`, `linkedin_poll`, `collaborators`,
+     * `user_tags`, and per-platform option arrays (`instagram`, `facebook`,
+     * `linkedin`, `linkedin_page`, `youtube`, `tiktok`, `pinterest`, `x`,
+     * `bluesky`, `mastodon`, `google_business`). For X / Bluesky / Mastodon,
+     * pass `['thread_parts' => [['text' => '...'], ...]]` (2 to 25 parts) to
      * publish a chained thread.
+     *
+     * `linkedin_poll` (nullable) publishes a non-sponsored LinkedIn poll
+     * instead of a normal post - mutually exclusive with media / link-share
+     * on that post: `['question' => '...', 'options' => ['...', '...'],
+     * 'duration' => 'ONE_DAY']`. `question` is max 140 chars, `options`
+     * takes 2 to 4 entries of max 30 chars each, and `duration` is one of
+     * `ONE_DAY`, `THREE_DAYS`, `SEVEN_DAYS`, `FOURTEEN_DAYS`.
      *
      * Each `media_urls` / `media_ids` entry is a plain string, or an array
      * with an `alt` accessibility description (max 1500 chars):
@@ -109,6 +116,9 @@ class Posts extends AbstractResource
      * `PATCH /posts/:id` - update a draft or scheduled post. For X / Bluesky /
      * Mastodon, `['thread_parts' => null]` clears thread mode (revert to a
      * single post); omitting the key leaves the existing thread untouched.
+     * Likewise, `['linkedin_poll' => null]` clears an existing poll and
+     * reverts the post to a normal post; omitting the key leaves it
+     * untouched.
      *
      * Scheduling or editing an X link post can throw the same `402
      * x_credits_insufficient` gate described on `create()`.
