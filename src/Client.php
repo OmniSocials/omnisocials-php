@@ -24,7 +24,7 @@ use OmniSocials\Exception\AuthenticationException;
  */
 class Client
 {
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.3.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
