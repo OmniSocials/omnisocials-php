@@ -57,9 +57,12 @@ class Posts extends AbstractResource
      * `type`, `link_url`, `location_id`, `linkedin_poll`, `collaborators`,
      * `user_tags`, and per-platform option arrays (`instagram`, `facebook`,
      * `linkedin`, `linkedin_page`, `youtube`, `tiktok`, `pinterest`, `x`,
-     * `bluesky`, `mastodon`, `google_business`). For X / Bluesky / Mastodon,
-     * pass `['thread_parts' => [['text' => '...'], ...]]` (2 to 25 parts) to
-     * publish a chained thread.
+     * `bluesky`, `mastodon`, `threads`, `google_business`). For X / Bluesky /
+     * Mastodon / Threads, pass `['thread_parts' => [['text' => '...'], ...]]`
+     * (2 to 25 parts) to publish a chained thread. Threads: 500 characters
+     * per part, up to 10 media per part; parts after the first publish as
+     * replies to the previous part, and the Threads caption is taken from
+     * part 1.
      *
      * `linkedin_poll` (nullable) publishes a non-sponsored LinkedIn poll
      * instead of a normal post - mutually exclusive with media / link-share
@@ -114,8 +117,9 @@ class Posts extends AbstractResource
 
     /**
      * `PATCH /posts/:id` - update a draft or scheduled post. For X / Bluesky /
-     * Mastodon, `['thread_parts' => null]` clears thread mode (revert to a
-     * single post); omitting the key leaves the existing thread untouched.
+     * Mastodon / Threads, `['thread_parts' => null]` clears thread mode
+     * (revert to a single post); omitting the key leaves the existing thread
+     * untouched.
      * Likewise, `['linkedin_poll' => null]` clears an existing poll and
      * reverts the post to a normal post; omitting the key leaves it
      * untouched.

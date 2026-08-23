@@ -1,7 +1,7 @@
 {
     "name": "omnisocials/omnisocials-php",
     "description": "Official PHP SDK for the OmniSocials API. Schedule and publish posts to Instagram, Facebook, LinkedIn, YouTube, TikTok, X, Pinterest, Bluesky, Threads, Mastodon, and Google Business from one API.",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "type": "library",
     "license": "MIT",
     "keywords": [

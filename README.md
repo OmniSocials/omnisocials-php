@@ -128,9 +128,9 @@ $client->posts->create([
 ]);
 ```
 
-### X thread
+### Chained threads (X, Bluesky, Mastodon, Threads)
 
-Provide 2 to 25 `thread_parts` to publish a chained thread instead of a single tweet. Each part is capped at 280 characters and can carry its own media (`media_ids` / `media_urls`). The same `thread_parts` shape works for `bluesky` (300 chars per part) and `mastodon` (500 chars per part).
+Provide 2 to 25 `thread_parts` to publish a chained thread instead of a single tweet. Each part is capped at 280 characters and can carry its own media (`media_ids` / `media_urls`). The same `thread_parts` shape works for `bluesky` (300 chars per part), `mastodon` (500 chars per part) and `threads` (Meta Threads: 2 to 25 parts, 500 characters per part, up to 10 media per part; parts after the first publish as replies to the previous part, and the Threads caption is taken from part 1).
 
 ```php
 $client->posts->create([
@@ -148,7 +148,22 @@ $client->posts->create([
 ]);
 ```
 
-On update, pass `'thread_parts' => null` to clear thread mode (revert to a single post); leave the key out to keep the existing thread untouched.
+```php
+// Meta Threads chain with a carousel on the first part
+$client->posts->create([
+    'content' => 'Behind the scenes of our summer shoot',
+    'channels' => ['threads'],
+    'threads' => [
+        'thread_parts' => [
+            ['text' => 'Behind the scenes of our summer shoot. A few highlights:', 'media_urls' => ['https://example.com/shoot-1.jpg', 'https://example.com/shoot-2.jpg']],
+            ['text' => 'Day one: scouting locations at sunrise.'],
+            ['text' => 'Day two: the full crew, 14 hours, zero regrets.'],
+        ],
+    ],
+]);
+```
+
+On update, pass `'thread_parts' => null` to clear thread mode (revert to a single post); leave the key out to keep the existing thread untouched. The same applies to `bluesky`, `mastodon` and `threads`.
 
 ### X link posts use credits
 
