@@ -18,7 +18,7 @@ class Inbox extends AbstractResource
      * when `has_more` is false.
      *
      * @param array{
-     *     platform?: 'instagram'|'facebook'|'linkedin'|'tiktok'|'x',
+     *     platform?: 'instagram'|'facebook'|'linkedin'|'tiktok'|'youtube'|'x',
      *     type?: 'dm'|'comment'|'mention',
      *     unread?: bool,
      *     limit?: int,

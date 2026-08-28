@@ -419,12 +419,12 @@ if (!empty($check['valid'])) {
 
 ## Social Inbox
 
-DMs, comments, and mentions from Instagram, Facebook, LinkedIn, TikTok (video comments only), and X (DMs) in one place. TikTok replies are comments only and capped at 150 characters. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere.
+DMs, comments, and mentions from Instagram, Facebook, LinkedIn, TikTok (video comments only), YouTube (video comments only), and X (DMs) in one place. TikTok and YouTube replies are comments only; TikTok replies are capped at 150 characters. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere.
 
 ```php
 // List conversations (all filters optional)
 $conversations = $client->inbox->listConversations([
-    'platform' => 'instagram', // instagram | facebook | linkedin | tiktok | x
+    'platform' => 'instagram', // instagram | facebook | linkedin | tiktok | youtube | x
     'type' => 'dm',            // dm | comment | mention
     'unread' => true,
     'limit' => 25,             // 1-100
