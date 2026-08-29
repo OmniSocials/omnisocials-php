@@ -64,6 +64,18 @@ class Posts extends AbstractResource
      * replies to the previous part, and the Threads caption is taken from
      * part 1.
      *
+     * Threads posts can carry a location tag: `'threads' =>
+     * ['location_id' => '...']` (an id from
+     * `$client->locations->search($q, ['platform' => 'threads'])`), or
+     * `'location' => ['id' => '...', 'name' => '...']` to store display
+     * fields along with the id (`location_id` wins when both are given). On
+     * a multi-post thread the tag is applied to part 1, and the Post's
+     * `threads` block echoes a `location` object when set. Threads location
+     * tagging is currently rolling out; until Meta approves the permissions
+     * it is disabled on production and create/update/publish return a 400
+     * (also a 400 `validation_error` asking you to reconnect Threads when
+     * the connection lacks the `threads_location_tagging` permission).
+     *
      * `linkedin_poll` (nullable) publishes a non-sponsored LinkedIn poll
      * instead of a normal post - mutually exclusive with media / link-share
      * on that post: `['question' => '...', 'options' => ['...', '...'],
@@ -119,7 +131,9 @@ class Posts extends AbstractResource
      * `PATCH /posts/:id` - update a draft or scheduled post. For X / Bluesky /
      * Mastodon / Threads, `['thread_parts' => null]` clears thread mode
      * (revert to a single post); omitting the key leaves the existing thread
-     * untouched.
+     * untouched. A Threads location tag clears the same way:
+     * `'threads' => ['location_id' => null]` (or `'location' => null`)
+     * removes the tag, while omitting the key leaves it untouched.
      * Likewise, `['linkedin_poll' => null]` clears an existing poll and
      * reverts the post to a normal post; omitting the key leaves it
      * untouched.

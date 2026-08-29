@@ -17,8 +17,16 @@ class Inbox extends AbstractResource
      * `pagination.next_cursor` back as `cursor` to fetch the next page; stop
      * when `has_more` is false.
      *
+     * Threads conversations are `type` "comment" (replies people leave on
+     * the user's Threads posts; conversation ids look like
+     * `threads_comment_<rootPostId>`) and "mention"
+     * (`threads_mention_<postId>`); there are no Threads DMs. Threads inbox
+     * is currently rolling out: until Meta approves the permissions it is
+     * disabled on production and calls return a clear error, and it needs a
+     * Threads connection with the reply permission.
+     *
      * @param array{
-     *     platform?: 'instagram'|'facebook'|'linkedin'|'tiktok'|'youtube'|'x',
+     *     platform?: 'instagram'|'facebook'|'linkedin'|'tiktok'|'youtube'|'x'|'threads',
      *     type?: 'dm'|'comment'|'mention',
      *     unread?: bool,
      *     limit?: int,
@@ -77,6 +85,12 @@ class Inbox extends AbstractResource
      *
      * `$conversationId` is URL-encoded for you.
      *
+     * On a Threads conversation the reply publishes as a native Threads
+     * reply. Threads inbox is currently rolling out (disabled on production
+     * until Meta App Review) and needs a Threads connection with the reply
+     * permission: a 401 `reauth_required` means the connection lacks that
+     * permission (reconnect Threads).
+     *
      * X DM replies cost 2 prepaid credits per send (X's send fee, passed
      * through at cost), debited before the send and auto-refunded if the
      * send fails. Two 402 error codes are specific to this endpoint, thrown
@@ -99,6 +113,35 @@ class Inbox extends AbstractResource
         return $this->client->post(
             '/inbox/conversations/' . $this->encodePathSegment($conversationId) . '/reply',
             $params
+        );
+    }
+
+    /**
+     * `POST /inbox/messages/:messageId/hide` - hide or unhide a reply someone
+     * left on one of the user's Threads posts, as the post owner (Threads
+     * only for now). Returns the updated message as `{ data: InboxMessage }`
+     * with its `hidden` flag flipped.
+     *
+     * Only incoming top-level replies can be hidden (Threads does not allow
+     * hiding nested replies); the message keeps its place in the
+     * conversation.
+     *
+     * Errors: 400 `unsupported_platform` (not an incoming Threads reply, or
+     * Threads inbox not available yet), 400 `not_hideable` (nested reply or
+     * Threads refused), 401 `reauth_required` (connection lacks the reply
+     * permission; reconnect Threads), 404 `not_found` (message not in this
+     * workspace) or `account_not_connected` (no Threads account).
+     *
+     * `$messageId` is URL-encoded for you.
+     *
+     * @param array{hide?: bool} $params Optional. `hide` defaults to true
+     *                                   (true = hide, false = unhide).
+     */
+    public function hide(string $messageId, array $params = []): mixed
+    {
+        return $this->client->post(
+            '/inbox/messages/' . $this->encodePathSegment($messageId) . '/hide',
+            $params === [] ? null : $params
         );
     }
 }

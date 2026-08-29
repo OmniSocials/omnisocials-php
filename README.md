@@ -165,6 +165,8 @@ $client->posts->create([
 
 On update, pass `'thread_parts' => null` to clear thread mode (revert to a single post); leave the key out to keep the existing thread untouched. The same applies to `bluesky`, `mastodon` and `threads`.
 
+Threads posts can also carry a location tag: pass `'threads' => ['location_id' => '...']` with an id from `$client->locations->search($q, ['platform' => 'threads'])` (see Locations below). On a multi-post thread the tag is applied to part 1, and on update `'location_id' => null` clears it. Threads location tagging is currently rolling out; until Meta approves the permissions it is disabled on production and calls return a clear error.
+
 ### X link posts use credits
 
 X bills API posts whose text contains a URL at a premium, and OmniSocials passes that fee through as prepaid credits (20 credits per URL-containing tweet; threads billed per part with a link). When a create targets X and the text contains a URL, the response includes a top-level `warnings` array (a sibling of `data`):
@@ -399,7 +401,7 @@ $best = $client->analytics->bestTimes([
 ]);
 ```
 
-## Locations (Instagram place tagging)
+## Locations (Instagram and Threads place tagging)
 
 ```php
 $results = $client->locations->search('Griffith Observatory');
@@ -417,14 +419,35 @@ if (!empty($check['valid'])) {
 }
 ```
 
+Threads uses its own location ids (a Facebook Place ID is not a Threads location id). Pass `'platform' => 'threads'` and search by keyword, or by `latitude` plus `longitude` instead of a keyword; use a result's `id` as `threads.location_id` on a post:
+
+```php
+$results = $client->locations->search('Griffith Observatory', ['platform' => 'threads']);
+// or around a point instead of a keyword:
+$results = $client->locations->search(null, [
+    'platform' => 'threads',
+    'latitude' => 34.1184,
+    'longitude' => -118.3004,
+]);
+$threadsLocationId = $results['locations'][0]['id'];
+
+$client->posts->create([
+    'content' => 'Golden hour at the observatory',
+    'channels' => ['threads'],
+    'threads' => ['location_id' => $threadsLocationId],
+]);
+```
+
+The Threads response is `{ locations: [...] }` (each with nullable `name`, `address`, `city`, `country`, `latitude`, `longitude`) or `{ error: { code, message } }` with `code` one of `not_available`, `threads_not_connected`, `threads_reauth_required` (reconnect Threads), or `platform_error`. Threads location tagging is currently rolling out; until Meta approves the permissions it is disabled on production and calls return a clear error.
+
 ## Social Inbox
 
-DMs, comments, and mentions from Instagram, Facebook, LinkedIn, TikTok (video comments only), YouTube (video comments only), and X (DMs) in one place. TikTok and YouTube replies are comments only; TikTok replies are capped at 150 characters. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere.
+DMs, comments, and mentions from Instagram, Facebook, LinkedIn, TikTok (video comments only), YouTube (video comments only), X (DMs), and Threads (comments and mentions on your Threads posts; no DMs) in one place. TikTok and YouTube replies are comments only; TikTok replies are capped at 150 characters. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere. Threads inbox is currently rolling out; until Meta approves the permissions it is disabled on production and calls return a clear error, and it needs a Threads connection with the reply permission (a 401 `reauth_required` on `reply()` or `hide()` means reconnect Threads).
 
 ```php
 // List conversations (all filters optional)
 $conversations = $client->inbox->listConversations([
-    'platform' => 'instagram', // instagram | facebook | linkedin | tiktok | youtube | x
+    'platform' => 'instagram', // instagram | facebook | linkedin | tiktok | youtube | x | threads
     'type' => 'dm',            // dm | comment | mention
     'unread' => true,
     'limit' => 25,             // 1-100
@@ -444,6 +467,11 @@ foreach ($conversations['data'] as $conversation) {
         'attachment_url' => 'https://example.com/reply.jpg',
         'attachment_type' => 'image', // image | video | audio | file
     ]);
+
+    // Threads only: hide or unhide a reply on one of your Threads posts
+    // (incoming top-level replies only; the message keeps its place).
+    $client->inbox->hide($messages['data'][0]['id']);                    // hide
+    $client->inbox->hide($messages['data'][0]['id'], ['hide' => false]); // unhide
 }
 
 // Page through with the cursor.
