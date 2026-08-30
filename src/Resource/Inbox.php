@@ -102,11 +102,15 @@ class Inbox extends AbstractResource
      *   resume. DMs that arrived while suspended are not recovered.
      *
      * @param array{
-     *     text: string,
+     *     text?: string,
      *     attachment_url?: string,
      *     attachment_type?: 'image'|'video'|'audio'|'file'
-     * } $params `text` is required; pass `attachment_url` (with an optional
-     *           `attachment_type`) to include media.
+     * } $params On Facebook and Instagram DMs, pass `attachment_url` (with
+     *           `attachment_type`) to include media; `text` is optional
+     *           when `attachment_url` is set (an attachment-only reply is
+     *           allowed). Other platforms are text-only, and `text` is
+     *           required for them. The returned message's `attachment` key
+     *           carries the same shape when the message has media.
      */
     public function reply(string $conversationId, array $params): mixed
     {
