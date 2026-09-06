@@ -107,6 +107,13 @@ class Posts extends AbstractResource
      * Drafts are never gated, and posts publishing before 2026-08-14 are
      * never gated.
      *
+     * `approval_workflow_id` (a workflow id from `$client->approvalWorkflows->list()`)
+     * routes the post through a saved approval workflow: it is created as
+     * `in_approval` (`approval_status: "pending"`) instead of `scheduled`, the
+     * approvers are notified, and it publishes at `scheduled_at` once the last
+     * step approves. Requires `scheduled_at`; not allowed with `publish_now`.
+     * Errors: `404 workflow_not_found`, `400 validation_error`.
+     *
      * @param array<string, mixed> $params
      */
     public function create(array $params): mixed

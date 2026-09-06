@@ -33,6 +33,7 @@ class Client
     public readonly Resource\Media $media;
     public readonly Resource\Folders $folders;
     public readonly Resource\HashtagSets $hashtagSets;
+    public readonly Resource\ApprovalWorkflows $approvalWorkflows;
     public readonly Resource\Accounts $accounts;
     public readonly Resource\Analytics $analytics;
     public readonly Resource\Audio $audio;
@@ -81,6 +82,7 @@ class Client
         $this->media = new Resource\Media($this);
         $this->folders = new Resource\Folders($this);
         $this->hashtagSets = new Resource\HashtagSets($this);
+        $this->approvalWorkflows = new Resource\ApprovalWorkflows($this);
         $this->accounts = new Resource\Accounts($this);
         $this->analytics = new Resource\Analytics($this);
         $this->audio = new Resource\Audio($this);
