@@ -156,7 +156,7 @@ class Posts extends AbstractResource
     }
 
     /**
-     * `DELETE /posts/:id` - delete a post. Returns null (204).
+     * `DELETE /posts/:id` - remove a post from OmniSocials (the live post stays on the platform). Returns null (204).
      */
     public function delete(string $id): mixed
     {
