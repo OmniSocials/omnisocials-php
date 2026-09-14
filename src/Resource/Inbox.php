@@ -21,9 +21,8 @@ class Inbox extends AbstractResource
      * the user's Threads posts; conversation ids look like
      * `threads_comment_<rootPostId>`) and "mention"
      * (`threads_mention_<postId>`); there are no Threads DMs. Threads inbox
-     * is currently rolling out: until Meta approves the permissions it is
-     * disabled on production and calls return a clear error, and it needs a
-     * Threads connection with the reply permission.
+     * needs a Threads connection with the reply permissions; connections made
+     * before those permissions existed must be reconnected once.
      *
      * @param array{
      *     platform?: 'instagram'|'facebook'|'linkedin'|'tiktok'|'youtube'|'x'|'threads',
@@ -94,10 +93,9 @@ class Inbox extends AbstractResource
      * `$conversationId` is URL-encoded for you.
      *
      * On a Threads conversation the reply publishes as a native Threads
-     * reply. Threads inbox is currently rolling out (disabled on production
-     * until Meta App Review) and needs a Threads connection with the reply
+     * reply. The Threads inbox needs a Threads connection with the reply
      * permission: a 401 `reauth_required` means the connection lacks that
-     * permission (reconnect Threads).
+     * permission (connected before it existed; reconnect Threads).
      *
      * X DM replies cost 2 prepaid credits per send (X's send fee, passed
      * through at cost), debited before the send and auto-refunded if the
@@ -158,9 +156,9 @@ class Inbox extends AbstractResource
      * `not_found` (message not in this workspace) or `account_not_connected`,
      * 429 `quota_exceeded` (YouTube's daily API quota is used up; retry after
      * midnight Pacific), 502 `platform_error` (the platform rejected the
-     * call). Threads inbox is currently rolling out; until Meta approves the
-     * permissions it is disabled on production and Threads calls return a
-     * clear error.
+     * call). The Threads inbox needs a Threads connection with the reply
+     * permissions; a connection made before those permissions existed
+     * answers 401 `reauth_required` until reconnected.
      *
      * `$messageId` is URL-encoded for you.
      *
