@@ -34,10 +34,12 @@ class Inbox extends AbstractResource
      * } $params All optional. `limit` is clamped to 1-100. `unanswered`
      *           returns only conversations that still need an answer: the
      *           customer's latest DM has no reply after it (Instagram/Facebook
-     *           DMs within the 24-hour messaging window only), or a
-     *           comment/mention that has not been replied to and is not
-     *           hidden. Replies typed in the native apps count as answers.
-     *           Read state is ignored here; use `next()` for a work queue.
+     *           DMs past Meta's 24-hour messaging window included: they
+     *           cannot be answered through the API, but the customer is
+     *           still waiting), or a comment/mention that has not been
+     *           replied to and is not hidden. Replies typed in the native
+     *           apps count as answers. Read state is ignored here; use
+     *           `next()` for a work queue.
      */
     public function listConversations(array $params = []): mixed
     {
@@ -107,6 +109,21 @@ class Inbox extends AbstractResource
      *   the balance hit zero; top up and re-enable it in the dashboard to
      *   resume. DMs that arrived while suspended are not recovered.
      *
+     * On comment and mention threads, pass `message_id` (the `id` of the
+     * comment being answered: `message.id` from `next()`, or a message `id`
+     * from `getMessages()`). Every comment on a post shares one
+     * conversation, so without it the reply is posted under the newest
+     * comment on the post, which may be a different person than the one you
+     * drafted for. Ignored for DMs. 404 `not_found` when it is not an
+     * incoming message of this conversation.
+     *
+     * Instagram and Facebook DMs can only be answered within 24 hours of the
+     * customer's last message (Meta policy). That is checked before the
+     * send: a closed window throws 422 `outside_messaging_window` and
+     * nothing is sent (`next()` reports the same in `reply_window`). Answer
+     * such a DM from the Instagram or Facebook app (mirrored into the inbox)
+     * or mark the conversation read; do not retry.
+     *
      * Pass `include_next` => true to also get `next` (the next conversation
      * that needs an answer, the same object `next()` returns under `data`,
      * using its default queue order and filters; null when nothing is
@@ -117,6 +134,7 @@ class Inbox extends AbstractResource
      *     text?: string,
      *     attachment_url?: string,
      *     attachment_type?: 'image'|'video'|'audio'|'file',
+     *     message_id?: string,
      *     include_next?: bool
      * } $params On Facebook and Instagram DMs, pass `attachment_url` (with
      *           `attachment_type`) to include media; `text` is optional
@@ -124,6 +142,8 @@ class Inbox extends AbstractResource
      *           allowed). Other platforms are text-only, and `text` is
      *           required for them. The returned message's `attachment` key
      *           carries the same shape when the message has media.
+     *           `message_id` is the inbox id of the comment being answered
+     *           (comment and mention threads; ignored for DMs).
      */
     public function reply(string $conversationId, array $params): mixed
     {
@@ -156,9 +176,15 @@ class Inbox extends AbstractResource
      * `not_found` (message not in this workspace) or `account_not_connected`,
      * 429 `quota_exceeded` (YouTube's daily API quota is used up; retry after
      * midnight Pacific), 502 `platform_error` (the platform rejected the
-     * call). The Threads inbox needs a Threads connection with the reply
-     * permissions; a connection made before those permissions existed
-     * answers 401 `reauth_required` until reconnected.
+     * call), 502 `hide_not_applied` (Instagram accepted the call but, read
+     * back, still reports the comment in its old state; this happens with
+     * comments Instagram shows under "Comments from Facebook" on a reel that
+     * is also shared to Facebook, which live on Facebook where Instagram's
+     * hide does not reach them; the inbox row is left unchanged, so hide it
+     * in the Instagram or Facebook app and do not retry). The Threads inbox
+     * needs a Threads connection with the reply permissions; a connection
+     * made before those permissions existed answers 401 `reauth_required`
+     * until reconnected.
      *
      * `$messageId` is URL-encoded for you.
      *
@@ -203,13 +229,18 @@ class Inbox extends AbstractResource
 
     /**
      * `GET /inbox/next` - the next conversation that needs an answer: a work
-     * queue for answering the inbox. Returns the oldest (by default) item
-     * that still needs a reply, together with its conversation so far and
-     * the post it belongs to, so a reply can be drafted from one call. An
-     * item needs an answer when it is the customer's latest DM with no reply
-     * after it (Instagram/Facebook DMs within the 24-hour messaging window
-     * only, since Meta refuses replies outside it), or a comment/mention
-     * that has not been replied to and is not hidden. Replies typed in the
+     * queue for answering the inbox. Returns one item that still needs a
+     * reply, together with its conversation so far and the post it belongs
+     * to, so a reply can be drafted from one call. An item needs an answer
+     * when it is the customer's latest DM with no reply after it, or a
+     * comment/mention that has not been replied to and is not hidden. Order:
+     * DMs that can still be answered come first (Instagram/Facebook DMs
+     * inside Meta's 24-hour window, the one whose window closes soonest
+     * first, and X DMs), then Instagram/Facebook DMs whose window has closed
+     * (served with `reply_window.open` false: answer them from the native
+     * app or mark them read), then comments and mentions, oldest first by
+     * default; `order` => 'newest' reverses the order within each group.
+     * Replies typed in the
      * native apps count as answers (they are mirrored into the inbox), so a
      * thread a colleague answered on their phone is not served again.
      * Instagram mentions are skipped (no reply path). Looks at the last 30
@@ -220,13 +251,16 @@ class Inbox extends AbstractResource
      * true to include read-but-unanswered items.
      *
      * Returns `{ data: ?InboxNextUnanswered, remaining: int }`. `data` is
-     * `{ conversation: InboxConversation, message: InboxMessage, messages: InboxMessage[] }`,
+     * `{ conversation: InboxConversation, message: InboxMessage, messages: InboxMessage[], reply_window: { open: bool, closes_at: ?string } }`,
      * or null when nothing is waiting. `message` is the unanswered incoming
      * item itself (the customer's latest DM, or the specific comment): its
-     * `id` is what `hide()` and `deleteMessage()` take, its
-     * `conversation_id` is what `reply()` takes. `messages` is the
-     * conversation so far, oldest first (the most recent 50 messages for
-     * long DM threads). `remaining` is the number of unanswered items still
+     * `id` is what `hide()` and `deleteMessage()` take and the `message_id`
+     * to pass to `reply()` on comment threads, its `conversation_id` is
+     * what `reply()` takes. `messages` is the conversation so far, oldest
+     * first (the most recent 50 messages for long DM threads).
+     * `reply_window.open` is false only for an Instagram/Facebook DM past
+     * its 24-hour window, which `reply()` refuses with 422
+     * `outside_messaging_window`. `remaining` is the number of unanswered items still
      * waiting after this one (capped at 500), 0 when `data` is null. To
      * chain the queue, pass `include_next` => true to `reply()` and it
      * returns the next item in the same response. Errors: 400
