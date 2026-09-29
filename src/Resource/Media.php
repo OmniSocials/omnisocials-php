@@ -38,9 +38,11 @@ class Media extends AbstractResource
      * string. When it is not an existing file path it is treated as raw
      * bytes (pass `filename` so the API can detect the type). A PDF is
      * rasterized into image slides and returned as a carousel
-     * (`slides` + `media_ids`).
+     * (`slides` + `media_ids`); pass `pdf_mode` => 'document' to keep it as
+     * ONE item of type "document" whose single id in `media_ids` expands into
+     * every page.
      *
-     * @param array{file: string, filename?: string, name?: string, folder?: string, folder_id?: string} $params
+     * @param array{file: string, filename?: string, name?: string, folder?: string, folder_id?: string, pdf_mode?: 'slides'|'document'} $params
      */
     public function upload(array $params): mixed
     {
@@ -59,7 +61,7 @@ class Media extends AbstractResource
         }
 
         $fields = ['file' => $filePart];
-        foreach (['name', 'folder', 'folder_id'] as $key) {
+        foreach (['name', 'folder', 'folder_id', 'pdf_mode'] as $key) {
             if (isset($params[$key])) {
                 $fields[$key] = (string) $params[$key];
             }
@@ -73,7 +75,7 @@ class Media extends AbstractResource
      * (files up to 1GB; large videos finish processing in the background and
      * come back with status "processing").
      *
-     * @param array{url: string, filename?: string, name?: string, folder?: string} $params
+     * @param array{url: string, filename?: string, name?: string, folder?: string, folder_id?: string, pdf_mode?: 'slides'|'document'} $params
      */
     public function uploadFromUrl(array $params): mixed
     {
@@ -84,7 +86,7 @@ class Media extends AbstractResource
      * `POST /media/upload-from-base64` - upload base64-encoded file data
      * (no data URI prefix).
      *
-     * @param array{data: string, mime_type: string, filename?: string, name?: string, folder?: string} $params
+     * @param array{data: string, mime_type: string, filename?: string, name?: string, folder?: string, folder_id?: string, pdf_mode?: 'slides'|'document'} $params
      */
     public function uploadFromBase64(array $params): mixed
     {
