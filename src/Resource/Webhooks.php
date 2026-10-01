@@ -24,8 +24,9 @@ class Webhooks extends AbstractResource
 
     /**
      * `POST /webhooks` - register an endpoint for event deliveries
-     * (post.scheduled, post.published, post.failed). The response includes
-     * the signing `secret`; save it, it is only shown once.
+     * (post.scheduled, post.published, post.failed, post.approved,
+     * post.rejected). The response includes the signing `secret`; save it,
+     * it is only shown once.
      *
      * @param array{url: string, events: string[]} $params
      */

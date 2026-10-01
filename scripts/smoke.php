@@ -127,7 +127,7 @@ echo "\n== Resource method surface (40 endpoints + health) ==\n";
 $surface = [
     'posts' => [
         'class' => OmniSocials\Resource\Posts::class,
-        'methods' => ['list', 'get', 'recentPlatform', 'create', 'createAndPublish', 'update', 'delete', 'publish'],
+        'methods' => ['list', 'get', 'recentPlatform', 'create', 'createAndPublish', 'update', 'delete', 'publish', 'approve', 'reject', 'getApproval'],
     ],
     'media' => [
         'class' => OmniSocials\Resource\Media::class,
@@ -246,6 +246,26 @@ $sign = static function (int $ts, string $body) use ($secret): string {
 $verified = Webhooks::verifySignature($rawBody, $sign($timestamp, $rawBody), $secret);
 check($verified === $event, 'valid signature returns the parsed event array');
 check($verified['data']['targets'][0]['platform'] === 'instagram', 'nested event data survives the round-trip');
+
+// A post.rejected delivery keeps its `approval` object.
+$rejected = [
+    'id' => 'e7c9a1b2-3d4e-4f6a-8b8c-9d0e1f2a3b4c',
+    'type' => 'post.rejected',
+    'created_at' => gmdate('c'),
+    'data' => [
+        'post_id' => '123456',
+        'workspace_id' => 789,
+        'status' => 'rejected',
+        'targets' => [],
+        'approval' => ['status' => 'rejected', 'decided_by' => 'c4a09e1d', 'reason' => 'Wrong product photo'],
+    ],
+];
+$rejectedBody = json_encode($rejected, JSON_UNESCAPED_SLASHES);
+$rejectedEvent = Webhooks::verifySignature($rejectedBody, $sign($timestamp, $rejectedBody), $secret);
+check(
+    $rejectedEvent['type'] === 'post.rejected' && $rejectedEvent['data']['approval'] === $rejected['data']['approval'],
+    'post.rejected event keeps its approval object'
+);
 
 // 2. Tampered body fails.
 $tampered = str_replace('post.published', 'post.failed', $rawBody);

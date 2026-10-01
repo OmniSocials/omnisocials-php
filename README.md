@@ -230,6 +230,20 @@ $client->posts->reject($id, "Wrong CTA link, please fix.");      // reject and s
 
 Only works on a post with `approval_status: "pending"` (`status: "in_approval"`). Both act on behalf of the user who owns the API key, who must be a listed approver for the workflow's CURRENT step — steps approve in order, so being an approver on a later step is not enough yet (throws a `PermissionDeniedException` with error code `forbidden`). Approving the last step finalizes the post (`scheduled` or `posting`); rejecting stops the whole workflow immediately, not just the current step.
 
+### Read the approval review
+
+```php
+$review = $client->posts->getApproval($id)['data'];
+if ($review['status'] === 'rejected' && $review['rejection'] !== null) {
+    echo "Rejected by {$review['rejection']['by']['name']}: {$review['rejection']['reason']}\n";
+}
+foreach ($review['steps'] as $step) {
+    echo "{$step['order']} {$step['name']} {$step['status']}\n";
+}
+```
+
+`getApproval` returns the review of a post that went through an approval workflow: `status` (`none`, `pending`, `approved`, `rejected`), the `workflow`, who requested it and when, `current_step` (the step the post waits on, null when the review ended), every step with its approvers and their decisions, the `rejection` (`by`, `reason`, `at`, `step`; null when nobody rejected) and the `comments` thread, oldest first. A post without an approval workflow returns `status: "none"` with empty `steps` and `comments`. Read-only; needs the `posts:read` scope.
+
 ### Recent platform posts
 
 Fetch recent posts live from the connected platform APIs, including content published outside OmniSocials. Useful for brand-new workspaces where `list()` is empty. Requires the `analytics:read` scope. Each record includes `duration_seconds` (integer, nullable): the video length in whole seconds where the platform reports it — currently TikTok and YouTube; `null` for images and for platforms that don't expose it.
@@ -547,6 +561,8 @@ try {
 
 ## Webhooks
 
+Events: `post.scheduled`, `post.published`, `post.failed`, `post.approved` (the last step of a post's approval workflow is approved) and `post.rejected` (an approver rejects the post; it will not publish). The two approval events carry `data.approval` with `status`, `decided_by` (the approver's user id) and `reason` (null on `post.approved`), and an empty `data.targets`.
+
 ### Manage endpoints
 
 ```php
@@ -597,6 +613,9 @@ switch ($event['type']) {
         break;
     case 'post.failed':
         error_log('Failed: ' . $event['data']['post_id']);
+        break;
+    case 'post.rejected':
+        error_log('Rejected: ' . $event['data']['post_id'] . ' ' . ($event['data']['approval']['reason'] ?? ''));
         break;
 }
 
