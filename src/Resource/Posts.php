@@ -76,6 +76,16 @@ class Posts extends AbstractResource
      * (also a 400 `validation_error` asking you to reconnect Threads when
      * the connection lacks the `threads_location_tagging` permission).
      *
+     * Pinterest posts can tag products: `'pinterest' => ['board_id' => '...',
+     * 'product_tags' => [...]]` with up to 24 product Pins of the connected
+     * Pinterest account, each as a Pin id string (see
+     * `$client->pinterest->listProducts()`) or a Pin link. Products of other
+     * merchants cannot be tagged. The tags are added right after the Pin is
+     * published; a product Pinterest refuses never fails the post, and the
+     * Post's `pinterest` block then carries `product_tags_result`
+     * (`requested`, `tagged`, `skipped`, `error`). More than 24 entries or
+     * an invalid entry throws a 400 `ValidationException`.
+     *
      * `linkedin_poll` (nullable) publishes a non-sponsored LinkedIn poll
      * instead of a normal post - mutually exclusive with media / link-share
      * on that post: `['question' => '...', 'options' => ['...', '...'],
@@ -144,6 +154,9 @@ class Posts extends AbstractResource
      * Likewise, `['linkedin_poll' => null]` clears an existing poll and
      * reverts the post to a normal post; omitting the key leaves it
      * untouched.
+     *
+     * `pinterest` replaces the stored Pinterest options wholesale, so leave
+     * `product_tags` out (or send `[]`) to remove the product tags.
      *
      * Scheduling or editing an X link post can throw the same `402
      * x_credits_insufficient` gate described on `create()`.

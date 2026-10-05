@@ -463,6 +463,36 @@ $client->posts->create([
 
 The Threads response is `{ locations: [...] }` (each with nullable `name`, `address`, `city`, `country`, `latitude`, `longitude`) or `{ error: { code, message } }` with `code` one of `not_available`, `threads_not_connected`, `threads_reauth_required` (reconnect Threads), or `platform_error`. Threads location tagging is currently rolling out; until Meta approves the permissions it is disabled on production and calls return a clear error.
 
+## Pinterest product tags
+
+Tag products on a Pin so people can shop the items in the image. `$client->pinterest->listProducts()` returns the product Pins of the connected Pinterest account; pass their `pin_id` values (max 24) as `product_tags` in the `pinterest` options of the post. Only product Pins of your own account can be tagged; products of other merchants cannot. The tags are added right after the Pin is published. A product that Pinterest refuses never fails the post: the outcome is on the post as `pinterest.product_tags_result` (`requested`, `tagged`, `skipped`, `error`).
+
+```php
+$result = $client->pinterest->listProducts();
+
+if (isset($result['error'])) {
+    // HTTP 200 without `products`: pinterest_not_connected,
+    // pinterest_catalog_access_required or platform_error
+    error_log($result['error']['code'] . ': ' . $result['error']['message']);
+} else {
+    $productTags = array_column(array_slice($result['products'], 0, 3), 'pin_id');
+
+    $client->posts->create([
+        'content' => 'Our summer picks',
+        'channels' => ['pinterest'],
+        'media_urls' => ['https://example.com/summer-look.jpg'],
+        'scheduled_at' => '2026-08-01T09:00:00Z',
+        'pinterest' => [
+            'board_id' => '1234567890',
+            'title' => 'Summer picks',
+            'product_tags' => $productTags,
+        ],
+    ]);
+}
+```
+
+Without `source` the list reads the Pinterest catalog (with `price`, `currency`, `availability` and `item_id`) when the connection has catalog access, else the account's own Pins. Catalog access is given one time in the OmniSocials composer: Pinterest options, Add products, Connect catalog. `'source' => 'pins'` scans up to 250 Pins per call, so `products` can be empty while `bookmark` is set; call again with `['bookmark' => $result['bookmark']]`. To check one Pin id or Pin link before you post, call `$client->pinterest->validateProduct('813744226420795884')`. On `posts->update()` the `pinterest` array replaces the stored one, so leave `product_tags` out to remove the tags.
+
 ## Social Inbox
 
 DMs, comments, and mentions from Instagram, Facebook, LinkedIn, TikTok (video comments only), YouTube (video comments only), X (DMs), and Threads (comments and mentions on your Threads posts; no DMs) in one place. TikTok and YouTube replies are comments only; TikTok replies are capped at 150 characters. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere. The Threads inbox needs a Threads connection with the reply permission (a 401 `reauth_required` on `reply()` or `hide()` means reconnect Threads; an account connected before 2026-09-14 needs this once).

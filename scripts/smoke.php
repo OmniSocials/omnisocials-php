@@ -122,7 +122,7 @@ check(
     'baseUrl trailing slash is trimmed'
 );
 
-echo "\n== Resource method surface (40 endpoints + health) ==\n";
+echo "\n== Resource method surface (46 endpoints + health) ==\n";
 
 $surface = [
     'posts' => [
@@ -152,6 +152,10 @@ $surface = [
     'locations' => [
         'class' => OmniSocials\Resource\Locations::class,
         'methods' => ['search', 'validate'],
+    ],
+    'pinterest' => [
+        'class' => OmniSocials\Resource\Pinterest::class,
+        'methods' => ['listProducts', 'validateProduct'],
     ],
     'webhooks' => [
         'class' => OmniSocials\Resource\Webhooks::class,
@@ -316,6 +320,6 @@ if ($failures > 0) {
 }
 echo "All smoke tests passed.\n";
 echo "- Client constructs with named args, env fallback via getenv, missing key throws AuthenticationException\n";
-echo "- 8 resources expose all DESIGN.md inventory methods (40 endpoints) plus health()\n";
+echo "- 9 resources expose all DESIGN.md inventory methods (46 endpoints) plus health()\n";
 echo "- Exception hierarchy and status mapping correct (RateLimitException::getRetryAfter works)\n";
 echo "- Webhook signature: accepts valid, rejects tampered/stale/wrong-secret/malformed/non-JSON\n";
