@@ -465,7 +465,7 @@ The Threads response is `{ locations: [...] }` (each with nullable `name`, `addr
 
 ## Social Inbox
 
-DMs, comments, and mentions from Instagram, Facebook, LinkedIn, TikTok (video comments only), YouTube (video comments only), X (DMs), and Threads (comments and mentions on your Threads posts; no DMs) in one place. TikTok and YouTube replies are comments only; TikTok replies are capped at 150 characters. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere. Threads inbox is currently rolling out; until Meta approves the permissions it is disabled on production and calls return a clear error, and it needs a Threads connection with the reply permission (a 401 `reauth_required` on `reply()` or `hide()` means reconnect Threads).
+DMs, comments, and mentions from Instagram, Facebook, LinkedIn, TikTok (video comments only), YouTube (video comments only), X (DMs), and Threads (comments and mentions on your Threads posts; no DMs) in one place. TikTok and YouTube replies are comments only; TikTok replies are capped at 150 characters. The list endpoints are **cursor-paginated** (`{ next_cursor, has_more, limit }`), unlike the offset-paginated lists elsewhere. The Threads inbox needs a Threads connection with the reply permission (a 401 `reauth_required` on `reply()` or `hide()` means reconnect Threads; an account connected before 2026-09-14 needs this once).
 
 ```php
 // List conversations (all filters optional)
@@ -479,13 +479,13 @@ $conversations = $client->inbox->listConversations([
 foreach ($conversations['data'] as $conversation) {
     // Full message history for one conversation.
     // LinkedIn ids contain ":" and "()" - they are URL-encoded for you.
-    $messages = $client->inbox->getMessages($conversation['id']);
+    $messages = $client->inbox->getMessages($conversation['conversation_id']);
 
     // Mark the whole conversation as read.
-    $client->inbox->markRead($conversation['id']);
+    $client->inbox->markRead($conversation['conversation_id']);
 
     // Reply (text required; attachment optional).
-    $client->inbox->reply($conversation['id'], [
+    $client->inbox->reply($conversation['conversation_id'], [
         'text' => 'Thanks for reaching out!',
         'attachment_url' => 'https://example.com/reply.jpg',
         'attachment_type' => 'image', // image | video | audio | file
@@ -547,7 +547,7 @@ X DM conversations (`platform` = `x`, `type` always `dm`) cost credits to reply 
 use OmniSocials\Exception\ApiException;
 
 try {
-    $client->inbox->reply($conversation['id'], ['text' => 'Thanks for the DM!']);
+    $client->inbox->reply($conversation['conversation_id'], ['text' => 'Thanks for the DM!']);
 } catch (ApiException $e) {
     if ($e->getErrorCode() === 'insufficient_credits') {
         echo "Balance can't cover the 2-credit send, top up in the dashboard\n";
