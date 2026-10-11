@@ -87,6 +87,54 @@ $client->posts->create([
 ]);
 ```
 
+### Planned drafts
+
+Pass `'draft' => true` with `scheduled_at` to store the post as a draft that keeps its time. It shows on the dashboard calendar at that slot with a dashed outline and the scheduler never publishes it: a person schedules it from the composer, or you do with `update()` and `'draft' => false`. Use it when an agent proposes a slot that a human should confirm. A draft is not allowed with `publish_now` or `approval_workflow_id` (`400 validation_error`). On `update()`, `'draft' => false` without `scheduled_at` is a `400 validation_error` when the draft has no time or its time is in the past (pass a new `scheduled_at` then), and `'draft' => true` on a scheduled post unschedules it while keeping the time.
+
+```php
+$proposal = $client->posts->create([
+    'content' => 'Proposed for Friday morning',
+    'channels' => ['instagram', 'linkedin'],
+    'scheduled_at' => '2026-08-01T09:00:00Z',
+    'draft' => true,
+]);
+echo $proposal['data']['status'] . ' ' . $proposal['data']['schedule_at']; // draft, the time is kept
+
+// The human agrees: schedule it at the time it already carries
+$client->posts->update($proposal['data']['id'], ['draft' => false]);
+```
+
+### Comment-to-DM automations
+
+Answer a keyword in an Instagram comment with a DM, once per person, with an optional public reply under the comment. Pass `'comment_dm_automation'` on `create()` (Instagram must be in `channels`) and the automation is bound to that post; it starts listening once the post is live. Needs the opt-in `automations:write` scope on the key. `$client->automations` manages the automations themselves (`list`, `get`, `create`, `update`, `delete`) and reads their activity (`listEvents`, `automations:read`). On `update()`, `'comment_dm_automation'` as an array replaces the post's automation and `null` removes it. Instagram rules: one private reply per comment, within 7 days; OmniSocials caps sends at 180 DMs an hour per account.
+
+```php
+$post = $client->posts->create([
+    'content' => 'Comment GUIDE and I will send you the link',
+    'channels' => ['instagram'],
+    'scheduled_at' => '2026-08-01T09:00:00Z',
+    'media_urls' => ['https://example.com/guide-cover.jpg'],
+    'comment_dm_automation' => [
+        'trigger' => ['keywords' => ['guide'], 'match' => 'word'],
+        'actions' => [
+            'dm' => ['text' => 'Here is the guide: https://example.com/guide'],
+            'public_reply' => ['enabled' => true, 'variations' => ['Sent you a DM!', 'Check your inbox']],
+        ],
+        'limits' => ['max_sends' => 500],
+    ],
+]);
+$automationId = $post['data']['comment_dm_automation']['id'];
+
+// Later: who was answered, and why someone was skipped
+$events = $client->automations->listEvents($automationId, ['outcome' => 'sent']);
+print_r($events['counts']); // ['sent' => 12, 'skipped' => 3]
+foreach ($events['data'] as $event) {
+    echo $event['person']['username'] . ' ' . $event['outcome'] . ' ' . $event['reason_label'] . "\n";
+}
+```
+
+The events response is `['data', 'counts', 'pagination']`, not the plain list: `counts` is the number of events per outcome (`sent`, `skipped`, `failed`, `pending`). An automation can also listen on a post published outside OmniSocials (`$client->automations->create(['instagram_media_id' => ..., 'actions' => ...])`), on the next post the workspace publishes (`'trigger' => ['scope' => 'next_post']`) or on every post (`'scope' => 'any'`), and on DMs and story replies (`'trigger' => ['kinds' => ['dm', 'story_reply'], ...]`).
+
 ### Publish immediately
 
 ```php
@@ -726,7 +774,7 @@ try {
 
 ## API scopes
 
-Each API key carries scopes: `posts:read`, `posts:write`, `media:write`, `accounts:read`, `analytics:read`, `webhooks:manage`. A call with a missing scope throws `PermissionDeniedException` with code `insufficient_scope`.
+Each API key carries scopes: `posts:read`, `posts:write`, `media:write`, `accounts:read`, `analytics:read`, `webhooks:manage`, plus the opt-in `automations:read` / `automations:write` for comment-to-DM automations. A call with a missing scope throws `PermissionDeniedException` with code `insufficient_scope`.
 
 ## Documentation
 

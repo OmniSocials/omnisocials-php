@@ -24,7 +24,7 @@ use OmniSocials\Exception\AuthenticationException;
  */
 class Client
 {
-    public const VERSION = '0.9.0';
+    public const VERSION = '0.10.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
@@ -39,6 +39,7 @@ class Client
     public readonly Resource\Audio $audio;
     public readonly Resource\Locations $locations;
     public readonly Resource\Pinterest $pinterest;
+    public readonly Resource\Automations $automations;
     public readonly Resource\Inbox $inbox;
     public readonly Resource\Webhooks $webhooks;
 
@@ -89,6 +90,7 @@ class Client
         $this->audio = new Resource\Audio($this);
         $this->locations = new Resource\Locations($this);
         $this->pinterest = new Resource\Pinterest($this);
+        $this->automations = new Resource\Automations($this);
         $this->inbox = new Resource\Inbox($this);
         $this->webhooks = new Resource\Webhooks($this);
     }

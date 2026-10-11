@@ -124,6 +124,38 @@ class Posts extends AbstractResource
      * step approves. Requires `scheduled_at`; not allowed with `publish_now`.
      * Errors: `404 workflow_not_found`, `400 validation_error`.
      *
+     * `draft => true` with `scheduled_at` stores a planned draft: the post is
+     * `draft` and keeps that time, shows on the dashboard calendar at that
+     * slot with a dashed outline, and the scheduler never publishes it. A
+     * person schedules it from the composer, or you do with `update()` and
+     * `draft => false`. Use it when an agent proposes a slot that a human
+     * should confirm. Not allowed with `publish_now` or `approval_workflow_id`
+     * (`400 validation_error`). Without `scheduled_at` it changes nothing.
+     *
+     * `media_fit` is the image fit per channel for feed images whose ratio
+     * is outside what a channel shows uncropped: an array of platform id
+     * (`'instagram'`, `'pinterest'`, ...) to `'auto'`, `'crop'` or `'keep'`.
+     * `auto` (default): Instagram crops a tall or wide image to 4:5 / 1.91:1
+     * around the subject (Instagram cuts it to that window anyway and Meta
+     * cannot boost a feed post outside it); Pinterest keeps a Pin taller
+     * than 2:3 and reports it. `crop` / `keep` force it per channel. Every
+     * decision comes back in the same `warnings` array with code
+     * `image_fit` (`action` is `cropped`, `kept` or `crop_failed`, with
+     * `platform`, `media_url`, `ratio`, `target` and `crop_url`).
+     *
+     * `comment_dm_automation` binds a comment-to-DM automation to the post
+     * (Instagram must be in `channels`): a keyword in a comment is answered
+     * with a DM, once per person, with an optional public reply under the
+     * comment. Shape: `['trigger' => ['keywords' => ['guide'], 'match' =>
+     * 'word'], 'actions' => ['dm' => ['text' => '...'], 'public_reply' =>
+     * ['enabled' => true, 'variations' => [...]]], 'limits' => ['max_sends'
+     * => 500]]` (see `$client->automations->create()` for the fields). Needs
+     * the `automations:write` scope on the key (`403 insufficient_scope`,
+     * checked before anything else); a bad array is a `400 validation_error`
+     * whose message starts with `comment_dm_automation: `. The response
+     * then carries `data.comment_dm_automation` (the automation, with
+     * `post` null); it starts listening once the post is live on Instagram.
+     *
      * @param array<string, mixed> $params
      */
     public function create(array $params): mixed
@@ -134,8 +166,9 @@ class Posts extends AbstractResource
     /**
      * `POST /posts/create-and-publish` - create a post and publish it
      * immediately. Same params as `create()` minus `scheduled_at`; see
-     * `create()` for the `warnings` array and the `x_credits_insufficient`
-     * schedule-time gate on X link posts.
+     * `create()` for the `warnings` array (X link posts, and the `image_fit`
+     * entries steered by `media_fit`), the `x_credits_insufficient`
+     * schedule-time gate on X link posts and `comment_dm_automation`.
      *
      * @param array<string, mixed> $params
      */
@@ -158,8 +191,27 @@ class Posts extends AbstractResource
      * `pinterest` replaces the stored Pinterest options wholesale, so leave
      * `product_tags` out (or send `[]`) to remove the product tags.
      *
+     * `draft => false` without `scheduled_at` schedules a planned draft at the
+     * `scheduled_at` it already carries (`400 validation_error` when it has
+     * none or it is in the past). `draft => true` without `scheduled_at`
+     * unschedules a scheduled post: it keeps its time and stays on the
+     * calendar as a dashed draft, nothing publishes; a post waiting for
+     * approval leaves its workflow. `draft => true` with `scheduled_at` moves
+     * the time and keeps (or makes) the post a draft.
+     *
+     * `media_fit` (same shape as on `create()`) alone re-decides the stored
+     * images: `'keep'` gives the original back, `'crop'` crops an image that
+     * was kept. Like `create()`, the response can carry a top-level
+     * `warnings` array with `image_fit` entries when the update changes the
+     * images or `media_fit`.
+     *
      * Scheduling or editing an X link post can throw the same `402
      * x_credits_insufficient` gate described on `create()`.
+     *
+     * `comment_dm_automation` (same shape as on `create()`) as an array
+     * replaces the post's comment-to-DM automation, `['comment_dm_automation'
+     * => null]` removes it, and omitting the key leaves it untouched. Needs
+     * the `automations:write` scope.
      *
      * @param array<string, mixed> $params
      */
