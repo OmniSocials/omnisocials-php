@@ -173,6 +173,8 @@ $client->posts->create([
     'instagram' => ['share_to_feed' => true],
     'youtube' => ['title' => 'Summer shoot BTS', 'privacy' => 'public'],
     'x' => ['reply_settings' => 'following', 'made_with_ai' => false],
+    // A poll on X (the text is the question); also threads.poll and mastodon.poll:
+    // 'x' => ['poll' => ['options' => ['Polls', 'Reports'], 'duration_minutes' => 1440]],
 ]);
 ```
 
