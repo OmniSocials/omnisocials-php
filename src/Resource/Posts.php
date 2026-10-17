@@ -57,12 +57,25 @@ class Posts extends AbstractResource
      * `type`, `link_url`, `location_id`, `linkedin_poll`, `collaborators`,
      * `user_tags`, and per-platform option arrays (`instagram`, `facebook`,
      * `linkedin`, `linkedin_page`, `youtube`, `tiktok`, `pinterest`, `x`,
-     * `bluesky`, `mastodon`, `threads`, `google_business`). For X / Bluesky /
+     * `bluesky`, `mastodon`, `threads`, `google_business`, `telegram`). For X / Bluesky /
      * Mastodon / Threads, pass `['thread_parts' => [['text' => '...'], ...]]`
      * (2 to 25 parts) to publish a chained thread. Threads: 500 characters
      * per part, up to 10 media per part; parts after the first publish as
      * replies to the previous part, and the Threads caption is taken from
      * part 1.
+     *
+     * Telegram posts take a `telegram` array (the connected channel or
+     * group, posted by the OmniSocials bot): `silent`, `link_preview`,
+     * `pin`, `protect_content`, `spoiler`, `caption_above_media` (booleans),
+     * up to 3 `buttons` (`['text' => ..., 'url' => ...]`, not on an album or
+     * a poll), a native `poll` (`['options' => [...], 'open_period' => 3600,
+     * 'multiple' => true]`: 2 to 12 options of up to 100 characters; the post
+     * text is the question, max 300 characters, no media) and
+     * `first_comment` (a reply under the post). Text up to 4,096 characters;
+     * with media, text over 1,024 characters is sent as a reply under the
+     * media. No Stories. On update every key merges into the stored options.
+     * Once sent, the Post's `telegram` block carries `result` (message ids
+     * and links).
      *
      * Threads posts can carry a location tag: `'threads' =>
      * ['location_id' => '...']` (an id from

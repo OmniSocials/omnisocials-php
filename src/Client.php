@@ -24,7 +24,7 @@ use OmniSocials\Exception\AuthenticationException;
  */
 class Client
 {
-    public const VERSION = '0.10.0';
+    public const VERSION = '0.11.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
@@ -49,7 +49,7 @@ class Client
     private readonly int $maxRetries;
 
     /**
-     * @param string|null $apiKey     API key (`omsk_live_*` / `omsk_test_*`).
+     * @param string|null $apiKey     API key (`omsk_live_*`).
      *                                Defaults to the OMNISOCIALS_API_KEY environment variable.
      * @param string|null $baseUrl    API base URL. Defaults to https://api.omnisocials.com/v1.
      * @param float|null  $timeout    Per-request timeout in seconds. Defaults to 30.
