@@ -57,7 +57,8 @@ class Posts extends AbstractResource
      * `type`, `link_url`, `location_id`, `linkedin_poll`, `collaborators`,
      * `user_tags`, and per-platform option arrays (`instagram`, `facebook`,
      * `linkedin`, `linkedin_page`, `youtube`, `tiktok`, `pinterest`, `x`,
-     * `bluesky`, `mastodon`, `threads`, `google_business`, `telegram`). For X / Bluesky /
+     * `bluesky`, `mastodon`, `threads`, `google_business`, `telegram`,
+     * `discord`). For X / Bluesky /
      * Mastodon / Threads, pass `['thread_parts' => [['text' => '...'], ...]]`
      * (2 to 25 parts) to publish a chained thread. Threads: 500 characters
      * per part, up to 10 media per part; parts after the first publish as
@@ -76,6 +77,22 @@ class Posts extends AbstractResource
      * media. No Stories. On update every key merges into the stored options.
      * Once sent, the Post's `telegram` block carries `result` (message ids
      * and links).
+     *
+     * Discord posts take a `discord` array (one Discord channel, posted
+     * through its incoming webhook with the webhook's name and picture):
+     * `silent`, `link_preview` (default on), `allow_mentions` (default off:
+     * @everyone, @here, role and user mentions show as text and ping
+     * nobody), `spoiler` (booleans), `thread_name` (the post title in a
+     * forum or media channel, 1 to 100 characters; on a text channel the
+     * post goes out without it), up to 5 `buttons` (`['text' => ..., 'url' => ...]`: 1 to 80
+     * characters, https:// or http://, one row, not with a poll) and a
+     * native `poll` (`['options' => [...], 'duration_hours' => 24,
+     * 'multiple' => true]`: 2 to 10 options of up to 55 characters, 1 to 768
+     * hours, default 24; the post text is the question, max 300 characters,
+     * no media and no buttons). Text up to 2,000 characters; up to 10
+     * images, GIFs and videos per message, a video or GIF over 20 MB is sent
+     * as a link in the text. No Stories. Once sent, the Post's `discord`
+     * block carries `result` (message id and link).
      *
      * Threads posts can carry a location tag: `'threads' =>
      * ['location_id' => '...']` (an id from
@@ -157,17 +174,23 @@ class Posts extends AbstractResource
      * `platform`, `media_url`, `ratio`, `target` and `crop_url`).
      *
      * `comment_dm_automation` binds a comment-to-DM automation to the post
-     * (Instagram must be in `channels`): a keyword in a comment is answered
-     * with a DM, once per person, with an optional public reply under the
-     * comment. Shape: `['trigger' => ['keywords' => ['guide'], 'match' =>
-     * 'word'], 'actions' => ['dm' => ['text' => '...'], 'public_reply' =>
-     * ['enabled' => true, 'variations' => [...]]], 'limits' => ['max_sends'
-     * => 500]]` (see `$client->automations->create()` for the fields). Needs
-     * the `automations:write` scope on the key (`403 insufficient_scope`,
-     * checked before anything else); a bad array is a `400 validation_error`
-     * whose message starts with `comment_dm_automation: `. The response
-     * then carries `data.comment_dm_automation` (the automation, with
-     * `post` null); it starts listening once the post is live on Instagram.
+     * (Instagram or Facebook must be in `channels`): a keyword in a comment
+     * is answered with a DM, once per person, with an optional public reply
+     * under the comment. Shape: `['trigger' => ['keywords' => ['guide'],
+     * 'match' => 'word'], 'actions' => ['dm' => ['text' => '...'],
+     * 'public_reply' => ['enabled' => true, 'variations' => [...]]],
+     * 'limits' => ['max_sends' => 500], 'platforms' => ['instagram',
+     * 'facebook']]` (see `$client->automations->create()` for the fields).
+     * `platforms` makes one automation per listed channel; each must be a
+     * channel of the post. Without it: Instagram when the post goes there,
+     * else Facebook. Needs the `automations:write` scope on the key
+     * (`403 insufficient_scope`, checked before anything else); a bad array
+     * is a `400 validation_error` whose message starts with
+     * `comment_dm_automation: `. The response then carries
+     * `data.comment_dm_automation` (the first automation, with `post` null,
+     * plus `platforms` and `automations`, one `id` / `platform` / `status`
+     * per channel); each starts listening once the post is live on its
+     * channel.
      *
      * @param array<string, mixed> $params
      */
@@ -222,9 +245,15 @@ class Posts extends AbstractResource
      * x_credits_insufficient` gate described on `create()`.
      *
      * `comment_dm_automation` (same shape as on `create()`) as an array
-     * replaces the post's comment-to-DM automation, `['comment_dm_automation'
-     * => null]` removes it, and omitting the key leaves it untouched. Needs
+     * replaces the post's comment-to-DM automations (a channel no longer in
+     * `platforms` loses its automation), `['comment_dm_automation' => null]`
+     * removes them all, and omitting the key leaves them untouched. Needs
      * the `automations:write` scope.
+     *
+     * `discord` merges into the stored Discord options: a key set to `null`
+     * removes that option (`'discord' => ['poll' => null]`),
+     * `['discord' => null]` removes every option, and omitting the key
+     * leaves them untouched.
      *
      * @param array<string, mixed> $params
      */
