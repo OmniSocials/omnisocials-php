@@ -106,8 +106,8 @@ class Inbox extends AbstractResource
      * - `insufficient_credits` - the company balance can't cover the 2
      *   credits.
      * - `x_inbox_suspended` - the workspace's X inbox auto-suspended after
-     *   the balance hit zero; top up and re-enable it in the dashboard to
-     *   resume. DMs that arrived while suspended are not recovered.
+     *   the balance hit zero; a top-up turns it back on by itself. DMs that
+     *   arrived while suspended are not recovered.
      *
      * On comment and mention threads, pass `message_id` (the `id` of the
      * comment being answered: `message.id` from `next()`, or a message `id`
