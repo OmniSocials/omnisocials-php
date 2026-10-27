@@ -200,6 +200,41 @@ class Inbox extends AbstractResource
     }
 
     /**
+     * `POST /inbox/messages/:messageId/like` - like or unlike a comment
+     * someone left on one of the user's posts, as the connected Page or
+     * account. Facebook Page, LinkedIn Page and TikTok comments (incoming
+     * comments only). Facebook allows only Like (no Love or other
+     * reactions). Liking a comment that is already liked, or unliking one
+     * that is not, succeeds. Returns the comment after the change as
+     * `{ data: InboxMessage }` with its `liked` flag set: true when the
+     * account liked it, false when not, null where the platform has no like
+     * through OmniSocials (DMs, Instagram, YouTube, X, Threads). On Facebook
+     * and LinkedIn `liked` reflects likes made through OmniSocials; TikTok
+     * also syncs likes made in the TikTok app. Requires the `inbox:write`
+     * scope.
+     *
+     * Errors: 400 `unsupported_platform` (not an incoming Facebook, LinkedIn
+     * or TikTok comment), 401 `reauth_required` (the TikTok comments
+     * authorization is missing or expired, or the LinkedIn Page connection expired), 403 `reconnect_required` (the
+     * account was connected without the permission to like comments;
+     * reconnect it in the dashboard), 404 `not_found` (message not in this
+     * workspace) or `account_not_connected`, 502 `platform_error` (the
+     * platform rejected the call).
+     *
+     * `$messageId` is URL-encoded for you.
+     *
+     * @param array{like?: bool} $params Optional. `like` defaults to true
+     *                                   (true = like, false = unlike).
+     */
+    public function like(string $messageId, array $params = []): mixed
+    {
+        return $this->client->post(
+            '/inbox/messages/' . $this->encodePathSegment($messageId) . '/like',
+            $params === [] ? null : $params
+        );
+    }
+
+    /**
      * `DELETE /inbox/messages/:messageId` - delete a comment someone left on
      * one of the user's posts, on the platform and from the inbox. Facebook,
      * Instagram and TikTok comments only: YouTube's API does not let a
@@ -254,9 +289,9 @@ class Inbox extends AbstractResource
      * `{ conversation: InboxConversation, message: InboxMessage, messages: InboxMessage[], reply_window: { open: bool, closes_at: ?string } }`,
      * or null when nothing is waiting. `message` is the unanswered incoming
      * item itself (the customer's latest DM, or the specific comment): its
-     * `id` is what `hide()` and `deleteMessage()` take and the `message_id`
-     * to pass to `reply()` on comment threads, its `conversation_id` is
-     * what `reply()` takes. `messages` is the conversation so far, oldest
+     * `id` is what `hide()`, `like()` and `deleteMessage()` take and the
+     * `message_id` to pass to `reply()` on comment threads, its
+     * `conversation_id` is what `reply()` takes. `messages` is the conversation so far, oldest
      * first (the most recent 50 messages for long DM threads).
      * `reply_window.open` is false only for an Instagram/Facebook DM past
      * its 24-hour window, which `reply()` refuses with 422

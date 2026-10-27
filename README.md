@@ -637,6 +637,11 @@ foreach ($conversations['data'] as $conversation) {
     $client->inbox->hide($messages['data'][0]['id']);                    // hide
     $client->inbox->hide($messages['data'][0]['id'], ['hide' => false]); // unhide
 
+    // Like or unlike a comment as the Page or account (Facebook, LinkedIn
+    // Page, TikTok). The returned message carries its `liked` flag.
+    $liked = $client->inbox->like($messages['data'][0]['id']);           // like
+    $client->inbox->like($messages['data'][0]['id'], ['like' => false]); // unlike
+
     // Delete a comment outright (Facebook, Instagram, TikTok; YouTube: hide
     // instead). Replies under it go with it (returned as removed_reply_ids).
     $client->inbox->deleteMessage($messages['data'][0]['id']);
