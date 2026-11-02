@@ -490,6 +490,48 @@ $client->posts->create([
 ]);
 ```
 
+## Post tags
+
+Tags are your workspace's own labels for posts (a hook style, a format), to filter and compare posts in Analytics. They never go to a platform. Uses the `posts:read` / `posts:write` scopes; the comparison uses `analytics:read`.
+
+```php
+$tag = $client->tags->create(['name' => 'Question', 'color' => 'blue']); // color optional
+$tagId = $tag['data']['id'];
+
+$client->tags->list();
+$client->tags->update($tagId, ['name' => 'Question hook']); // name and/or color
+$client->tags->delete($tagId); // ['data' => ['tag' => ..., 'posts_untagged' => 3]], the posts stay
+
+// Tag up to 500 posts at once, published ones included. Items are tag ids or names;
+// a new name in add or set becomes a tag. set replaces a post's tags.
+$applied = $client->tags->apply([
+    'post_ids' => ['1024', '1025'],
+    'add' => ['Question'],
+    'remove' => [$tagId],
+]);
+print_r($applied['data']['not_found']); // ids that are not posts of this workspace
+
+// Set tags on a post (ids or names, at most 20). On update, null or [] removes them.
+$client->posts->create([
+    'content' => 'Would you post this?',
+    'channels' => ['tiktok'],
+    'tags' => ['Question', 'Talking head'],
+]);
+$client->posts->update($postId, ['tags' => ['Question']]); // works on published posts too
+
+// Filter by tag (an id or name, comma separated = any of them)
+$client->posts->list(['tag' => 'Question']);
+$client->analytics->overview(['period' => '30d', 'tag' => 'Question']);
+
+// How each tag did against your normal (default: the last 90 days)
+$compare = $client->analytics->tags(['platform' => 'tiktok', 'min_posts' => 5]);
+foreach ($compare['data']['tags'] as $row) {
+    echo $row['tag']['name'] . ': ' . $row['vs_normal'] . "\n"; // 0.38 = 38% above normal
+}
+```
+
+Each post carries `tags` (the tag objects) and `trial_reel` (`['strategy' => 'MANUAL' | 'SS_PERFORMANCE']` for an Instagram Trial Reel, else `null`); `analytics->posts($ids)` items carry both too. Error codes: `tag_not_found` (404), `tag_exists` (409, the existing tag is in `error.tag` of `getBody()`), `tag_limit_reached` (409, at most 200 tags per workspace), `invalid_tag_name`, `invalid_tag_color`, `invalid_tags`, `invalid_post_ids`, `too_many_posts`, `too_many_tags` (400).
+
 ## Accounts
 
 ```php

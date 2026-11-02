@@ -141,13 +141,17 @@ $surface = [
         'class' => OmniSocials\Resource\HashtagSets::class,
         'methods' => ['list', 'get', 'create', 'update', 'delete'],
     ],
+    'tags' => [
+        'class' => OmniSocials\Resource\Tags::class,
+        'methods' => ['list', 'create', 'update', 'delete', 'apply'],
+    ],
     'accounts' => [
         'class' => OmniSocials\Resource\Accounts::class,
         'methods' => ['list', 'get'],
     ],
     'analytics' => [
         'class' => OmniSocials\Resource\Analytics::class,
-        'methods' => ['post', 'posts', 'overview', 'accounts', 'bestTimes'],
+        'methods' => ['post', 'posts', 'overview', 'accounts', 'bestTimes', 'tags'],
     ],
     'locations' => [
         'class' => OmniSocials\Resource\Locations::class,

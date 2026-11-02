@@ -9,7 +9,11 @@ class Posts extends AbstractResource
     /**
      * `GET /posts` - list posts in the workspace (newest first).
      *
-     * @param array{status?: string, limit?: int, offset?: int} $params
+     * `tag` keeps the posts with this tag (a tag id or name, comma
+     * separated for any of several; an unknown tag is 404
+     * `tag_not_found`).
+     *
+     * @param array{status?: string, limit?: int, offset?: int, tag?: string|int} $params
      */
     public function list(array $params = []): mixed
     {
@@ -17,6 +21,7 @@ class Posts extends AbstractResource
             'status' => $params['status'] ?? null,
             'limit' => $params['limit'] ?? null,
             'offset' => $params['offset'] ?? null,
+            'tag' => $params['tag'] ?? null,
         ]);
     }
 
@@ -197,6 +202,13 @@ class Posts extends AbstractResource
      * per channel); each starts listening once the post is live on its
      * channel.
      *
+     * `tags` is a list of tag ids or names (at most 20); a name that does
+     * not exist yet becomes a tag of the workspace. Tags are the workspace's
+     * own labels to filter and compare posts, never sent to a platform (see
+     * `$client->tags`). The post carries `tags` (the tag objects) and
+     * `trial_reel` (`['strategy' => 'MANUAL' | 'SS_PERFORMANCE']` for an
+     * Instagram Trial Reel, else `null`).
+     *
      * @param array<string, mixed> $params
      */
     public function create(array $params): mixed
@@ -259,6 +271,11 @@ class Posts extends AbstractResource
      * removes that option (`'discord' => ['poll' => null]`),
      * `['discord' => null]` removes every option, and omitting the key
      * leaves them untouched.
+     *
+     * `tags` (tag ids or names) replaces the post's tags; `['tags' => null]`
+     * or `['tags' => []]` removes them all. An update that sends only `tags`
+     * works on every post, published ones included. To change a few tags on
+     * many posts at once, use `$client->tags->apply()`.
      *
      * @param array<string, mixed> $params
      */
