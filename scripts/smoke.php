@@ -7,10 +7,12 @@
  *   php scripts/smoke.php
  *
  * Verifies: client construction, env fallback, resource method surface
- * (every endpoint in the DESIGN.md inventory), the exception hierarchy, and
- * a webhook signature round-trip (same scheme as backend
- * webhookDispatcher.js: HMAC-SHA256 hex over "{ts}.{body}", header
- * "t=<ts>,v1=<hex>").
+ * (every endpoint in the DESIGN.md inventory), the exception hierarchy,
+ * the ads calls against a loopback stub server (`php -S` on 127.0.0.1:
+ * method, path and body, a call that can start ad spend is sent once after
+ * a 502 or a timeout, a read is retried), and a webhook signature round-trip
+ * (same scheme as backend webhookDispatcher.js: HMAC-SHA256 hex over
+ * "{ts}.{body}", header "t=<ts>,v1=<hex>").
  */
 
 declare(strict_types=1);
@@ -122,7 +124,7 @@ check(
     'baseUrl trailing slash is trimmed'
 );
 
-echo "\n== Resource method surface (52 endpoints + health) ==\n";
+echo "\n== Resource method surface (every endpoint + health) ==\n";
 
 $surface = [
     'posts' => [
@@ -165,9 +167,21 @@ $surface = [
         'class' => OmniSocials\Resource\Automations::class,
         'methods' => ['list', 'get', 'create', 'update', 'delete', 'listEvents'],
     ],
+    'ads' => [
+        'class' => OmniSocials\Resource\Ads::class,
+        'methods' => ['listAccounts', 'capabilities', 'list', 'get', 'boost', 'boostMulti', 'create', 'update', 'activate', 'activateMulti', 'pause', 'resume', 'delete', 'overview', 'suggestions', 'researchKeywords', 'keywordMetrics'],
+    ],
     'webhooks' => [
         'class' => OmniSocials\Resource\Webhooks::class,
         'methods' => ['list', 'get', 'create', 'update', 'delete', 'rotateSecret'],
+    ],
+    'limits' => [
+        'class' => OmniSocials\Resource\Limits::class,
+        'methods' => ['list'],
+    ],
+    'featureRequests' => [
+        'class' => OmniSocials\Resource\FeatureRequests::class,
+        'methods' => ['create', 'list', 'get'],
     ],
 ];
 
@@ -181,6 +195,15 @@ foreach ($surface as $property => $expected) {
             "client->{$property}->{$method}() exists and is public"
         );
     }
+}
+
+check($client->ads->drafts instanceof OmniSocials\Resource\AdDrafts, 'client->ads->drafts is ' . OmniSocials\Resource\AdDrafts::class);
+$draftsReflection = new ReflectionClass($client->ads->drafts);
+foreach (['defaults', 'create', 'get', 'update', 'delete', 'attachAccount', 'launch'] as $method) {
+    check(
+        $draftsReflection->hasMethod($method) && $draftsReflection->getMethod($method)->isPublic(),
+        "client->ads->drafts->{$method}() exists and is public"
+    );
 }
 
 $clientReflection = new ReflectionClass($client);
@@ -227,6 +250,168 @@ check($mapped429 instanceof RateLimitException && $mapped429->getRetryAfter() ==
 check(ApiException::create(500, 'm') instanceof ServerException, 'create(500) -> ServerException');
 check(ApiException::create(503, 'm') instanceof ServerException, 'create(503) -> ServerException');
 check(get_class(ApiException::create(409, 'm')) === ApiException::class, 'create(409) -> plain ApiException');
+
+echo "\n== Ads calls against a loopback stub server ==\n";
+
+// A `php -S` router that answers from a script of statuses (the last one
+// repeats; "slow" answers 200 after 1s) and logs every request. Loopback only.
+$stubDir = sys_get_temp_dir() . '/omnisocials-php-smoke-' . bin2hex(random_bytes(4));
+mkdir($stubDir);
+file_put_contents($stubDir . '/router.php', <<<'PHP'
+<?php
+$answers = json_decode((string) file_get_contents(__DIR__ . '/answers.json'), true);
+$answer = count($answers) > 1 ? array_shift($answers) : $answers[0];
+file_put_contents(__DIR__ . '/answers.json', json_encode($answers));
+file_put_contents(__DIR__ . '/requests.jsonl', json_encode([
+    'method' => $_SERVER['REQUEST_METHOD'],
+    'uri' => $_SERVER['REQUEST_URI'],
+    'body' => file_get_contents('php://input'),
+]) . "\n", FILE_APPEND);
+header('Content-Type: application/json');
+if ($answer === 'slow') {
+    sleep(1);
+    $answer = 200;
+}
+http_response_code($answer);
+if ($answer >= 400) {
+    header('Retry-After: 0'); // keeps the retried reads fast
+    echo '{"error":{"code":"bad_gateway","message":"upstream"}}';
+} else {
+    echo '{"data":{"ok":true}}';
+}
+PHP);
+
+$probe = stream_socket_server('tcp://127.0.0.1:0');
+$port = (int) substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
+fclose($probe);
+$server = proc_open(
+    [PHP_BINARY, '-S', "127.0.0.1:{$port}", $stubDir . '/router.php'],
+    [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+    $serverPipes
+);
+$ready = false;
+for ($i = 0; $i < 50 && !$ready; $i++) {
+    $conn = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.1);
+    if ($conn !== false) {
+        fclose($conn);
+        $ready = true;
+    } else {
+        usleep(100_000);
+    }
+}
+check($ready, "stub server listens on 127.0.0.1:{$port}");
+
+/**
+ * Reset the stub with a new script of answers; returns a reader for the
+ * requests it logs.
+ */
+$stub = static function (array $answers) use ($stubDir): callable {
+    file_put_contents($stubDir . '/answers.json', json_encode($answers));
+    file_put_contents($stubDir . '/requests.jsonl', '');
+    return static function () use ($stubDir): array {
+        $lines = file($stubDir . '/requests.jsonl', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+        return array_map(static fn (string $line): array => json_decode($line, true), $lines);
+    };
+};
+$adsClient = new Client(apiKey: 'omsk_test_x', baseUrl: "http://127.0.0.1:{$port}/v1", maxRetries: 2);
+$draft = [
+    'name' => 'Autumn sale',
+    'objective' => 'traffic',
+    'platforms' => ['meta', ['platform' => 'linkedin', 'budget_amount' => 20]],
+    'budget' => ['amount' => 10, 'currency' => 'EUR'],
+    'schedule' => ['duration_days' => null],
+    'targeting' => ['countries' => ['NL', 'BE'], 'automatic_audience' => true],
+    'ads' => [[
+        'media' => [['url' => 'https://example.com/sale.jpg', 'type' => 'image']],
+        'primary_text' => '30% off everything this week',
+        'link' => 'https://example.com/sale',
+    ]],
+];
+
+$requests = $stub([201]);
+$adsClient->ads->drafts->create($draft);
+$sent = $requests();
+check(
+    count($sent) === 1 && $sent[0]['method'] === 'POST' && $sent[0]['uri'] === '/v1/ads/drafts',
+    'ads->drafts->create POSTs /ads/drafts'
+);
+check(json_decode($sent[0]['body'], true) === $draft, 'ads->drafts->create sends the draft (nested null kept)');
+
+$requests = $stub([200]);
+$adsClient->ads->drafts->update('g 1/x', $draft);
+$sent = $requests();
+check(
+    $sent[0]['method'] === 'PUT' && $sent[0]['uri'] === '/v1/ads/drafts/g%201%2Fx',
+    'ads->drafts->update PUTs /ads/drafts/:group_id with the id encoded'
+);
+check(json_decode($sent[0]['body'], true) === $draft, 'ads->drafts->update sends the full body');
+
+$requests = $stub([200]);
+$adsClient->ads->drafts->launch('g-1', ['confirm_budget_amount' => 10]);
+$adsClient->ads->drafts->launch('g-1', ['confirm_budget_amounts' => [7 => 10, 8 => 20]]);
+$sent = $requests();
+check(
+    $sent[0]['method'] === 'POST' && $sent[0]['uri'] === '/v1/ads/drafts/g-1/launch'
+        && $sent[0]['body'] === '{"confirm_budget_amount":10}',
+    'ads->drafts->launch POSTs the confirmed amount'
+);
+check($sent[1]['body'] === '{"confirm_budget_amounts":{"7":10,"8":20}}', 'ads->drafts->launch sends per campaign amounts as an object');
+
+$requests = $stub([200]);
+$adsClient->ads->activate(7, 25);
+$adsClient->ads->activateMulti([7, 8], 25);
+$adsClient->ads->activate('51', 25);
+$sent = $requests();
+check($sent[2]['uri'] === '/v1/ads/campaigns/51/activate', 'ads->activate takes the id as a string (the API sends ids as strings)');
+check(
+    $sent[0]['method'] === 'POST' && $sent[0]['uri'] === '/v1/ads/campaigns/7/activate'
+        && $sent[0]['body'] === '{"confirm_budget_amount":25}',
+    'ads->activate POSTs confirm_budget_amount'
+);
+check(
+    $sent[1]['uri'] === '/v1/ads/campaigns/activate-multi'
+        && $sent[1]['body'] === '{"campaign_ids":[7,8],"confirm_budget_amount":25}',
+    'ads->activateMulti sends campaign_ids and confirm_budget_amount'
+);
+
+$moneyCalls = [
+    'drafts->launch' => static fn () => $adsClient->ads->drafts->launch('g-1', ['confirm_budget_amount' => 10]),
+    'activate' => static fn () => $adsClient->ads->activate(7, 25),
+    'activateMulti' => static fn () => $adsClient->ads->activateMulti([7, 8], 25),
+    'resume' => static fn () => $adsClient->ads->resume(7),
+    'update' => static fn () => $adsClient->ads->update(7, ['budget' => ['amount' => 50, 'currency' => 'EUR'], 'confirm_budget_amount' => 50]),
+];
+foreach ($moneyCalls as $name => $call) {
+    $requests = $stub([502]);
+    checkThrows($call, ServerException::class, "ads->{$name} throws ServerException on a 502");
+    check(count($requests()) === 1, "ads->{$name} after a 502 is sent exactly once");
+}
+
+$requests = $stub([429, 200]);
+$adsClient->ads->activate(7, 25);
+check(count($requests()) === 2, 'ads->activate after a 429 is retried');
+
+$requests = $stub([502, 200]);
+$capabilities = $adsClient->ads->capabilities();
+check(
+    count($requests()) === 2 && $capabilities === ['data' => ['ok' => true]],
+    'ads->capabilities (a read) after a 502 is retried'
+);
+
+$requests = $stub(['slow', 200]);
+$hasty = new Client(apiKey: 'omsk_test_x', baseUrl: "http://127.0.0.1:{$port}/v1", timeout: 0.3, maxRetries: 2);
+checkThrows(
+    static fn () => $hasty->ads->drafts->launch('g-1', ['confirm_budget_amount' => 10]),
+    ApiConnectionException::class,
+    'ads->drafts->launch throws ApiConnectionException on a timeout'
+);
+usleep(1_200_000); // let the slow answer finish before counting
+check(count($requests()) === 1, 'ads->drafts->launch after a timeout is sent exactly once');
+
+proc_terminate($server);
+proc_close($server);
+array_map('unlink', glob($stubDir . '/*') ?: []);
+rmdir($stubDir);
 
 echo "\n== Webhook signature verification round-trip ==\n";
 
@@ -279,6 +464,30 @@ check(
     'post.rejected event keeps its approval object'
 );
 
+// An ad.status_changed delivery carries the campaign, not a post.
+$adEvent = [
+    'id' => 'b1f2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+    'type' => 'ad.status_changed',
+    'created_at' => '2026-07-13T10:00:05Z',
+    'data' => [
+        'campaign_id' => 42,
+        'workspace_id' => '456',
+        'name' => 'Boost: Summer launch post',
+        'platform' => 'meta',
+        'campaign_type' => 'boost',
+        'status' => 'active',
+        'previous_status' => 'pending_review',
+        'external_campaign_id' => '23851234567890123',
+        'budget' => ['type' => 'daily', 'amount' => 10, 'currency' => 'EUR'],
+    ],
+];
+$adBody = json_encode($adEvent, JSON_UNESCAPED_SLASHES);
+$verifiedAd = Webhooks::verifySignature($adBody, $sign($timestamp, $adBody), $secret);
+check(
+    $verifiedAd['type'] === 'ad.status_changed' && $verifiedAd['data'] === $adEvent['data'],
+    'ad.status_changed event verifies and keeps its campaign data'
+);
+
 // 2. Tampered body fails.
 $tampered = str_replace('post.published', 'post.failed', $rawBody);
 checkThrows(
@@ -328,6 +537,7 @@ if ($failures > 0) {
 }
 echo "All smoke tests passed.\n";
 echo "- Client constructs with named args, env fallback via getenv, missing key throws AuthenticationException\n";
-echo "- 10 resources expose all DESIGN.md inventory methods (52 endpoints) plus health()\n";
+echo "- 11 resources expose all DESIGN.md inventory methods plus health(), and ads->drafts its 7\n";
+echo "- Ads calls send the right method, path and body; spend calls are sent once after a 502 or a timeout\n";
 echo "- Exception hierarchy and status mapping correct (RateLimitException::getRetryAfter works)\n";
 echo "- Webhook signature: accepts valid, rejects tampered/stale/wrong-secret/malformed/non-JSON\n";

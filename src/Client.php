@@ -18,16 +18,24 @@ use OmniSocials\Exception\AuthenticationException;
  *
  *     $client->posts->create(['content' => 'Hello', 'channels' => ['instagram']]);
  *     $client->media->uploadFromUrl(['url' => 'https://example.com/pic.jpg']);
+ *     $client->ads->drafts->create([...]);
  *
  * All methods return the parsed response body as-is (the API wraps payloads in
  * `{ data, pagination?, ... }`); endpoints that respond 204 return null.
  */
 class Client
 {
-    public const VERSION = '0.14.0';
+    public const VERSION = '0.15.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
+
+    /**
+     * Pass as `$retry` to retry only a 429. A call that can start ad spend
+     * uses it: after a 5xx, a timeout or a lost connection the first attempt
+     * may have gone through, so it is never sent again.
+     */
+    public const RETRY_RATE_LIMIT = 'rate_limit';
 
     public readonly Resource\Posts $posts;
     public readonly Resource\Media $media;
@@ -41,8 +49,11 @@ class Client
     public readonly Resource\Locations $locations;
     public readonly Resource\Pinterest $pinterest;
     public readonly Resource\Automations $automations;
+    public readonly Resource\Ads $ads;
     public readonly Resource\Inbox $inbox;
     public readonly Resource\Webhooks $webhooks;
+    public readonly Resource\Limits $limits;
+    public readonly Resource\FeatureRequests $featureRequests;
 
     private readonly string $apiKey;
     private readonly string $baseUrl;
@@ -93,8 +104,11 @@ class Client
         $this->locations = new Resource\Locations($this);
         $this->pinterest = new Resource\Pinterest($this);
         $this->automations = new Resource\Automations($this);
+        $this->ads = new Resource\Ads($this);
         $this->inbox = new Resource\Inbox($this);
         $this->webhooks = new Resource\Webhooks($this);
+        $this->limits = new Resource\Limits($this);
+        $this->featureRequests = new Resource\FeatureRequests($this);
     }
 
     public function getBaseUrl(): string
@@ -127,9 +141,9 @@ class Client
         return $this->request('GET', $path, $query);
     }
 
-    public function post(string $path, ?array $body = null): mixed
+    public function post(string $path, ?array $body = null, ?string $retry = null): mixed
     {
-        return $this->request('POST', $path, [], $body);
+        return $this->request('POST', $path, [], $body, null, $retry);
     }
 
     public function postMultipart(string $path, array $fields): mixed
@@ -137,9 +151,14 @@ class Client
         return $this->request('POST', $path, [], null, $fields);
     }
 
-    public function patch(string $path, array $body): mixed
+    public function patch(string $path, array $body, ?string $retry = null): mixed
     {
-        return $this->request('PATCH', $path, [], $body);
+        return $this->request('PATCH', $path, [], $body, null, $retry);
+    }
+
+    public function put(string $path, array $body): mixed
+    {
+        return $this->request('PUT', $path, [], $body);
     }
 
     public function delete(string $path): mixed
@@ -157,6 +176,8 @@ class Client
      * @param array<string, mixed>|null $body      JSON request body (null keys are kept:
      *                                             e.g. `['thread_parts' => null]` clears a thread).
      * @param array<string, mixed>|null $multipart Multipart form fields (mutually exclusive with $body).
+     * @param string|null               $retry     `self::RETRY_RATE_LIMIT` retries only a 429 (the ads
+     *                                             calls that can start or raise spend).
      *
      * @throws ApiException           on a non-2xx response (most specific subclass).
      * @throws ApiConnectionException on network failure or timeout.
@@ -166,7 +187,8 @@ class Client
         string $path,
         array $query = [],
         ?array $body = null,
-        ?array $multipart = null
+        ?array $multipart = null,
+        ?string $retry = null
     ): mixed {
         $url = $this->buildUrl($path, $query);
         $jsonBody = null;
@@ -189,8 +211,9 @@ class Client
             );
 
             if ($errno !== 0) {
-                // Network failure or timeout: retryable.
-                if ($attempt < $this->maxRetries) {
+                // Network failure or timeout: retryable, unless the call may
+                // have started ad spend.
+                if ($retry !== self::RETRY_RATE_LIMIT && $attempt < $this->maxRetries) {
                     $this->sleepBackoff($attempt);
                     $attempt++;
                     continue;
@@ -213,7 +236,7 @@ class Client
             }
 
             $retryAfter = $this->parseRetryAfter($responseHeaders['retry-after'] ?? null);
-            $retryable = $status === 429 || $status >= 500;
+            $retryable = $status === 429 || ($status >= 500 && $retry !== self::RETRY_RATE_LIMIT);
             if ($retryable && $attempt < $this->maxRetries) {
                 $this->sleepBackoff($attempt, $retryAfter);
                 $attempt++;
@@ -288,7 +311,8 @@ class Client
         $errno = curl_errno($ch);
         $error = curl_error($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
+        // No curl_close(): PHP 8.0+ frees the handle when $ch goes out of
+        // scope, and PHP 8.5 deprecates the call.
 
         return [
             $status,

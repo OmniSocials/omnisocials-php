@@ -25,8 +25,11 @@ class Webhooks extends AbstractResource
     /**
      * `POST /webhooks` - register an endpoint for event deliveries
      * (post.scheduled, post.published, post.failed, post.approved,
-     * post.rejected). The response includes the signing `secret`; save it,
-     * it is only shown once.
+     * post.rejected, and ad.status_changed for ad campaigns). The `data` of
+     * an ad.status_changed delivery is the campaign, not a post:
+     * `campaign_id`, `workspace_id`, `name`, `platform`, `campaign_type`,
+     * `status`, `previous_status`, `external_campaign_id` and `budget`. The
+     * response includes the signing `secret`; save it, it is only shown once.
      *
      * @param array{url: string, events: string[]} $params
      */

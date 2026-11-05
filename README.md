@@ -50,7 +50,7 @@ $client = new Client(
 );
 ```
 
-Retries use exponential backoff (0.5s, 1s, 2s, ...) with jitter and honor the `Retry-After` header. Other 4xx responses are never retried.
+Retries use exponential backoff (0.5s, 1s, 2s, ...) with jitter and honor the `Retry-After` header. Other 4xx responses are never retried. The ads calls that start or raise spend retry a 429 only (see [Ads](#ads)).
 
 ## Rate limits
 
@@ -133,7 +133,22 @@ foreach ($events['data'] as $event) {
 }
 ```
 
-The events response is `['data', 'counts', 'pagination']`, not the plain list: `counts` is the number of events per outcome (`sent`, `skipped`, `failed`, `pending`, `queued`, `opted_out`). An automation can also listen on a post published outside OmniSocials (`$client->automations->create(['instagram_media_id' => ..., 'actions' => ...])`), on the next post the workspace publishes (`'trigger' => ['scope' => 'next_post']`) or on every post (`'scope' => 'any'`), and on DMs and story replies (`'trigger' => ['kinds' => ['dm', 'story_reply'], ...]`).
+The events response is `['data', 'counts', 'pagination']`, not the plain list: `counts` is the number of events per outcome (`sent`, `skipped`, `failed`, `pending`, `queued`, `opted_out`, `waiting`). An automation can also listen on a post published outside OmniSocials (`$client->automations->create(['instagram_media_id' => ..., 'actions' => ...])`), on the next post the workspace publishes (`'trigger' => ['scope' => 'next_post']`) or on every post (`'scope' => 'any'`), and on DMs and story replies (`'trigger' => ['kinds' => ['dm', 'story_reply'], ...]`).
+
+Follow first (`'follow_gate'` in the actions, Instagram only) sends the link only to people who follow the account. On a comment the private reply is a first message with one button; a tap makes OmniSocials ask Instagram whether the person follows. A follower gets the DM text, anyone else gets the `not_following` message with its button, and every later tap checks again. A DM or a story reply is checked at once. When Instagram gives no answer the link goes out anyway. Texts hold 640 characters and buttons 20; leave them out for the defaults. A person who has not followed yet is an event with outcome `waiting` and `$event['follow_gate']` (`state`, `taps`, `followed`, `checked`, `after_ask`); `stats['followed']` counts the people who followed after the ask. `'enabled' => true` on a Facebook or X automation is a `400 follow_gate_instagram_only`.
+
+```php
+$client->automations->update($automationId, [
+    'actions' => [
+        'dm' => ['text' => 'Here is the guide: https://example.com/guide'],
+        'follow_gate' => [
+            'enabled' => true,
+            'first_message' => ['text' => "Tap the button and I'll send you the link 👇", 'button' => 'Send me the link'],
+            'not_following' => ['text' => 'Almost there! Follow @yourbrand first, then tap the button again.', 'button' => 'I follow now'],
+        ],
+    ],
+]);
+```
 
 A Facebook Page works the same way, and the DM lands in Messenger: pass `'platform' => 'facebook'` to `$client->automations->create()`, or `'facebook_post_id' => ...` for a Page post published outside OmniSocials. On a post, `'comment_dm_automation' => ['platforms' => ['instagram', 'facebook'], ...]` makes one automation per channel with the same keywords and DM. Facebook has no story replies.
 
@@ -684,8 +699,9 @@ foreach ($conversations['data'] as $conversation) {
     $liked = $client->inbox->like($messages['data'][0]['id']);           // like
     $client->inbox->like($messages['data'][0]['id'], ['like' => false]); // unlike
 
-    // Delete a comment outright (Facebook, Instagram, TikTok; YouTube: hide
-    // instead). Replies under it go with it (returned as removed_reply_ids).
+    // Delete a comment outright, or one of your own replies (Facebook,
+    // Instagram, TikTok; YouTube: hide instead). Replies under it go with it
+    // (returned as removed_reply_ids).
     $client->inbox->deleteMessage($messages['data'][0]['id']);
 }
 
@@ -747,9 +763,66 @@ try {
 
 `insufficient_credits` means the company balance can't cover the 2 credits. `x_inbox_suspended` means the workspace's X inbox auto-suspended after the balance hit zero; a top-up turns it back on by itself, but DMs that arrived while suspended are not recovered. Same balance and top-up flow as "X link posts use credits" above.
 
+## Ads
+
+Boost a published post or create a new ad on Meta, Pinterest, TikTok, LinkedIn, X and Google. Ads spend real money, so every call that starts or raises spend asks for the amount again: `ads->activate()`, `ads->activateMulti()`, `ads->drafts->launch()` and a budget raise through `ads->update()`. Show the person the amount first and pass it only after they agree. These calls (and `ads->resume()`) are not retried after a 5xx or a timeout, because the first attempt may have started the ad: read the campaign or the draft to see what happened.
+
+The `ads:read` and `ads:write` scopes are opt-in: create the API key with **Ads** switched on (Settings, API). A key without them gets `403 insufficient_scope`. Ad accounts are connected and picked in the OmniSocials dashboard. Budgets are in major units (10 = 10 EUR) in the ad account's currency. Ad account and campaign ids come back as strings (`'51'`); the methods take an id as a string or an int.
+
+### Create an ad (draft, then launch)
+
+```php
+$caps = $client->ads->capabilities();
+print_r([$caps['data']['create_networks'], $caps['data']['network_states']]);
+
+$draft = $client->ads->drafts->create([
+    'name' => 'Autumn sale',
+    'objective' => 'traffic',
+    'platforms' => ['meta', 'linkedin'],
+    'budget' => ['amount' => 10, 'currency' => 'EUR'],
+    'schedule' => ['duration_days' => 7],
+    'targeting' => ['countries' => ['NL', 'BE'], 'automatic_audience' => true],
+    'ads' => [[
+        'media' => [['url' => 'https://example.com/sale.jpg', 'type' => 'image', 'width' => 1080, 'height' => 1350]],
+        'primary_text' => '30% off everything this week',
+        'headline' => 'Autumn sale',
+        'cta' => 'shop_now',
+        'link' => 'https://example.com/sale',
+    ]],
+])['data'];
+
+// A draft spends nothing. Hand $draft['review_url'] to the person, or start it
+// after they confirmed 10 EUR a day per network:
+$launch = $client->ads->drafts->launch($draft['group_id'], ['confirm_budget_amount' => 10])['data'];
+foreach ($launch['results'] as $result) {
+    echo $result['platform'], ': ', $result['ok'] ? 'started' : $result['error'], "\n";
+}
+```
+
+A draft needs no ad account; `$client->ads->drafts->attachAccount($groupId, ['platform' => 'meta', 'ad_account_id' => '51'])` sets one, and `campaigns[].readiness` says what still stops a network. `$client->ads->drafts->update($groupId, [...])` replaces the whole draft (HTTP PUT), so send every field again. On Meta an ad can carry a second upright 9:16 file for Stories and Reels: `'placement_media' => ['stories_reels' => ['url' => ..., 'type' => ...]]`.
+
+### Boost a post
+
+```php
+$accounts = $client->ads->listAccounts()['data'];
+$meta = current(array_filter($accounts, fn ($a) => $a['platform'] === 'meta' && $a['is_selected']));
+
+$boost = $client->ads->boost([
+    'post_id' => 12345,
+    'ad_account_id' => $meta['id'],
+    'budget' => ['type' => 'daily', 'amount' => 5, 'currency' => $meta['account_info']['currency'] ?? 'EUR'],
+    'targeting' => ['countries' => ['NL']],
+])['data'];
+
+// The boost is a draft. Start it only after the person confirmed 5 a day:
+$client->ads->activate($boost['id'], 5);
+```
+
+`$client->ads->boostMulti()` makes one draft boost per ad account (up to 10, the same budget each). `$client->ads->suggestions()` lists posts that do better than your median, `$client->ads->overview()` the totals, and `$client->ads->list()`, `get()`, `pause()`, `resume()` and `delete()` manage campaigns. Keyword ideas through the connected Google Ads account: `$client->ads->researchKeywords(['keywords' => ['running shoes'], 'country' => 'NL'])` and `$client->ads->keywordMetrics(['keywords' => [...]])`.
+
 ## Webhooks
 
-Events: `post.scheduled`, `post.published`, `post.failed`, `post.approved` (the last step of a post's approval workflow is approved) and `post.rejected` (an approver rejects the post; it will not publish). The two approval events carry `data.approval` with `status`, `decided_by` (the approver's user id) and `reason` (null on `post.approved`), and an empty `data.targets`.
+Events: `post.scheduled`, `post.published`, `post.failed`, `post.approved` (the last step of a post's approval workflow is approved) and `post.rejected` (an approver rejects the post; it will not publish). The two approval events carry `data.approval` with `status`, `decided_by` (the approver's user id) and `reason` (null on `post.approved`), and an empty `data.targets`. `ad.status_changed` fires when an ad campaign changes status (for example `pending_review` to `active` or `rejected`); its `data` is the campaign, not a post: `campaign_id`, `workspace_id`, `name`, `platform`, `campaign_type`, `status`, `previous_status`, `external_campaign_id` and `budget`.
 
 ### Manage endpoints
 
@@ -841,6 +914,42 @@ Route::post('/omnisocials/webhook', function (Request $request) {
 
 `Webhooks::verifySignature()` uses a constant-time comparison (`hash_equals`), rejects timestamps older than the tolerance (replay protection), throws `WebhookVerificationException` on any failure, and returns the parsed event array on success.
 
+## Limits and feature requests
+
+`$client->limits->list()` lists what OmniSocials cannot do, why (`says`) and what to do instead (`instead`): platform rules, features not built yet, features that work in the OmniSocials app only. Read it before you tell a person that something is not possible. When the person still wants a `requestable` entry, send a feature request with its `limit_id`. The request is stored for the person who owns the key; they see it in OmniSocials (Settings, Request a feature) and get an email when its status changes. Works with every key, no scope needed.
+
+```php
+use OmniSocials\Exception\ApiException;
+
+$limits = $client->limits->list(['platform' => 'telegram']); // 'area' => 'posts' | 'inbox' | ...
+foreach ($limits['data'] as $limit) {
+    echo $limit['id'], ': ', $limit['says'], ' ', $limit['instead'] ?? '', "\n";
+}
+
+try {
+    $result = $client->featureRequests->create([
+        'summary' => 'Post our daily update to the Announcements topic of our Telegram group, not to the whole group.',
+        'platform' => 'telegram',
+        'limit_id' => 'telegram.forum_topics',
+    ]);
+    // 'created' (new), 'voted' (added a vote to your organisation's open request)
+    // or 'already_requested' (you asked before; data is that request)
+    echo $result['outcome'], ' ', $result['data']['id'], ' ', $result['data']['status'], "\n";
+} catch (ApiException $e) {
+    if ($e->getErrorCode() !== 'not_requestable') {
+        throw $e;
+    }
+    // A platform rule or a choice of OmniSocials: nothing was stored.
+    $limit = $e->getBody()['error']['limit'];
+    echo $limit['says'], ' ', $limit['instead'] ?? '', "\n";
+}
+
+$mine = $client->featureRequests->list(); // newest first, at most 50
+$one = $client->featureRequests->get($mine['data'][0]['id']); // status, team_answer, team_replies
+```
+
+A limit is `{ id, kind, kind_label, area, platforms, title, says, instead, requestable }`; `kind` is `platform`, `by_design`, `not_built`, `beta`, `dashboard_only` or `needs_setup`, and `requestable` is false for `platform` and `by_design`. `limits->list()` also returns `kinds` (a label per kind). A request carries `status` (`open`, `in_progress`, `completed`, `declined`), `votes_count`, `team_answer` and `team_replies`. `summary` is 10 to 1000 characters (what the person wants to do and why), `title` at most 120 (made from the summary when left out); `area` is one of posts, media, inbox, analytics, automations, accounts, ads, team, other. Errors: `400 invalid_summary` / `invalid_title` / `invalid_platform` / `invalid_area` / `unknown_limit`, `409 not_requestable` (the entry is in `error.limit` of `getBody()`), `429 too_many_requests` (10 an hour per person), and `400 invalid_id` / `404 not_found` on `get`.
+
 ## Health
 
 ```php
@@ -884,7 +993,7 @@ try {
 
 ## API scopes
 
-Each API key carries scopes: `posts:read`, `posts:write`, `media:write`, `accounts:read`, `analytics:read`, `webhooks:manage`, plus the opt-in `automations:read` / `automations:write` for comment-to-DM automations. A call with a missing scope throws `PermissionDeniedException` with code `insufficient_scope`.
+Each API key carries scopes: `posts:read`, `posts:write`, `media:write`, `accounts:read`, `analytics:read`, `webhooks:manage`, plus the opt-in `automations:read` / `automations:write` for comment-to-DM automations and `ads:read` / `ads:write` for ads. A call with a missing scope throws `PermissionDeniedException` with code `insufficient_scope`.
 
 ## Documentation
 

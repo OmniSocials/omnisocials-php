@@ -9,11 +9,14 @@ class Posts extends AbstractResource
     /**
      * `GET /posts` - list posts in the workspace (newest first).
      *
-     * `tag` keeps the posts with this tag (a tag id or name, comma
-     * separated for any of several; an unknown tag is 404
+     * `start_date` / `end_date` keep posts whose `schedule_at` falls in the
+     * period, both inclusive: "YYYY-MM-DD" (a UTC day), "YYYY-MM" (a month)
+     * or an ISO 8601 datetime. With a range the posts come in calendar order
+     * (earliest first). `tag` keeps the posts with this tag (a tag id or
+     * name, comma separated for any of several; an unknown tag is 404
      * `tag_not_found`).
      *
-     * @param array{status?: string, limit?: int, offset?: int, tag?: string|int} $params
+     * @param array{status?: string, limit?: int, offset?: int, start_date?: string, end_date?: string, tag?: string|int} $params
      */
     public function list(array $params = []): mixed
     {
@@ -21,6 +24,8 @@ class Posts extends AbstractResource
             'status' => $params['status'] ?? null,
             'limit' => $params['limit'] ?? null,
             'offset' => $params['offset'] ?? null,
+            'start_date' => $params['start_date'] ?? null,
+            'end_date' => $params['end_date'] ?? null,
             'tag' => $params['tag'] ?? null,
         ]);
     }
@@ -190,8 +195,10 @@ class Posts extends AbstractResource
      * 'match' => 'word'], 'actions' => ['dm' => ['text' => '...'],
      * 'public_reply' => ['enabled' => true, 'variations' => [...]]],
      * 'limits' => ['max_sends' => 500], 'platforms' => ['instagram',
-     * 'facebook']]` (see `$client->automations->create()` for the fields).
-     * `platforms` makes one automation per listed channel; each must be a
+     * 'facebook']]` (see `$client->automations->create()` for the fields,
+     * also `'follow_gate'` in `actions`, Follow first, which applies to the
+     * Instagram automation only). `platforms` makes one automation per
+     * listed channel; each must be a
      * channel of the post. Without it: Instagram when the post goes there,
      * else Facebook. Needs the `automations:write` scope on the key
      * (`403 insufficient_scope`, checked before anything else); a bad array
