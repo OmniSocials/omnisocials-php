@@ -7,7 +7,13 @@ namespace OmniSocials\Resource;
 class Webhooks extends AbstractResource
 {
     /**
-     * `GET /webhooks` - list the workspace's webhook endpoints.
+     * `GET /webhooks` - list the webhooks of the key's workspace and the
+     * organisation-wide webhooks of its organisation (`workspace_id` null,
+     * made in the OmniSocials dashboard; they receive the events of every
+     * workspace). A webhook whose creator lost access to the organisation
+     * or workspace is switched off
+     * automatically: `is_active` is false and `last_failure['error']` says
+     * why.
      */
     public function list(): mixed
     {
@@ -15,7 +21,8 @@ class Webhooks extends AbstractResource
     }
 
     /**
-     * `GET /webhooks/:id` - fetch a single webhook.
+     * `GET /webhooks/:id` - fetch a webhook of the key's workspace, or an
+     * organisation-wide webhook of its organisation (`workspace_id` null).
      */
     public function get(string $id): mixed
     {
@@ -25,10 +32,17 @@ class Webhooks extends AbstractResource
     /**
      * `POST /webhooks` - register an endpoint for event deliveries
      * (post.scheduled, post.published, post.failed, post.approved,
-     * post.rejected, and ad.status_changed for ad campaigns). The `data` of
-     * an ad.status_changed delivery is the campaign, not a post:
-     * `campaign_id`, `workspace_id`, `name`, `platform`, `campaign_type`,
-     * `status`, `previous_status`, `external_campaign_id` and `budget`. The
+     * post.rejected, and for ads ad.status_changed, ad.created, ad.updated,
+     * ad.review, ad.delivery_issue, campaign.created, campaign.updated,
+     * campaign.budget, lead.received, ads.sync_failed, ads.sync_recovered,
+     * ads.initial_sync_completed and ad_rule.triggered). The `data` of an
+     * ad.status_changed delivery is the campaign, not a post: `campaign_id`,
+     * `workspace_id`, `name`, `platform`, `campaign_type`, `status`,
+     * `previous_status`, `external_campaign_id` and `budget`; the other
+     * campaign events carry the campaign plus `details`, the rest their own
+     * `data`. Any Ads event (ad.*, campaign.*, lead.*, ads.*, ad_rule.*)
+     * needs the `ads:read` scope on the key and `access_ads` for its person
+     * (403 `insufficient_scope` / 403 `insufficient_permission`). The
      * response includes the signing `secret`; save it, it is only shown once.
      *
      * @param array{url: string, events: string[]} $params
@@ -40,6 +54,10 @@ class Webhooks extends AbstractResource
 
     /**
      * `PATCH /webhooks/:id` - change the URL, events, or active state.
+     * Works on organisation-wide webhooks too. `['is_active' => true]`
+     * switches on a webhook that was switched off (also an automatic
+     * switch-off); setting `url`, `events` or switching it on makes the
+     * key's creator the person behind the webhook.
      *
      * @param array{url?: string, events?: string[], is_active?: bool} $params
      */
@@ -49,7 +67,8 @@ class Webhooks extends AbstractResource
     }
 
     /**
-     * `DELETE /webhooks/:id` - delete a webhook. Returns null (204).
+     * `DELETE /webhooks/:id` - delete a webhook of the key's workspace or
+     * an organisation-wide webhook of its organisation. Returns null (204).
      */
     public function delete(string $id): mixed
     {
@@ -58,7 +77,15 @@ class Webhooks extends AbstractResource
 
     /**
      * `POST /webhooks/:id/rotate-secret` - generate a new signing secret.
-     * Save the returned secret; it is only shown once.
+     * Save the returned secret; it is only shown once. The old secret keeps
+     * signing for 24 hours: every delivery then carries
+     * `X-OmniSocials-Signature` (new secret) and
+     * `X-OmniSocials-Signature-Previous` (old secret, same format, same
+     * timestamp and body). Verify the first with the new secret and, when
+     * that fails, the second with the old one (see
+     * `Webhooks::verifySignature()`). Rotating again within the 24 hours
+     * replaces the previous secret with the one just rotated out. Works on
+     * organisation-wide webhooks too.
      */
     public function rotateSecret(string $id): mixed
     {

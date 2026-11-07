@@ -11,6 +11,13 @@ use OmniSocials\Exception\WebhookVerificationException;
  *
  * The signed value is `"{timestamp}.{rawBody}"`, HMAC-SHA256 with the webhook
  * secret, hex digest; the `X-OmniSocials-Signature` header is `t=<unix>,v1=<hex>`.
+ *
+ * Secret rotation: for 24 hours after `$client->webhooks->rotateSecret()`,
+ * every delivery carries `X-OmniSocials-Signature` (signed with the new
+ * secret) and `X-OmniSocials-Signature-Previous` (signed with the old secret,
+ * same format, same timestamp and body). To keep accepting deliveries while
+ * you switch secrets, verify `X-OmniSocials-Signature` with the new secret
+ * and, when that throws, `X-OmniSocials-Signature-Previous` with the old one.
  */
 final class Webhooks
 {
@@ -33,6 +40,9 @@ final class Webhooks
      *
      * @param string $payload   The raw request body.
      * @param string $signature Value of the X-OmniSocials-Signature header: `t=<unix>,v1=<hex>`.
+     *                          For 24 hours after a secret rotation, pass the
+     *                          X-OmniSocials-Signature-Previous value with the old
+     *                          secret when the new secret does not match.
      * @param string $secret    The webhook's signing secret (shown once on create / rotate-secret).
      * @param int    $tolerance Max allowed age of the timestamp, in seconds. Defaults to 300 (5 minutes).
      *

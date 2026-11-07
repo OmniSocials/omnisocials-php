@@ -10,25 +10,130 @@ use OmniSocials\Client;
  * Boosts, campaigns and "Create an ad" drafts on Meta, Pinterest, TikTok,
  * LinkedIn, X and Google.
  *
- * Ads spend real money once a campaign starts. Boosts, campaigns and drafts
- * are created as drafts (no spend); `activate()`, `activateMulti()`,
- * `drafts->launch()`, `resume()` and a budget raise through `update()` start
- * or raise spend, and each needs the amount again as a confirmation. These
- * calls are never retried after a 5xx, a timeout or a lost connection (only
- * a 429), because the first attempt may have started the ad. Budgets are in
- * major currency units (10 = 10 EUR) in the ad account's currency. Ad
- * accounts are connected and picked in the OmniSocials dashboard. The scopes
- * `ads:read` and `ads:write` are opt-in on the API key (the Ads switch).
+ * Ads spend real money once a campaign starts. Boosts and drafts are created
+ * as drafts (no spend). Starting or raising spend needs a key with the opt-in
+ * `ads:spend` scope ("Start ads", a second switch under "Ads"; its creator
+ * needs `manage_ads`): `activate()`, `activateMulti()`, `resume()`,
+ * `drafts->launch()`, a budget raise or any change of a campaign that reached
+ * the network through `update()`, and the parity calls that switch something
+ * on or raise a budget: `bulkStatus()` (resuming), `campaignAds->setStatus()`
+ * (switching on), `campaignAds->add()` on a running campaign,
+ * `objects->update()`, `objects->setStatus()` (switching on),
+ * `objects->duplicate()`, `rules->create()`, `rules->update()` and
+ * `rules->undo()` (a rule or undo that switches on or raises),
+ * `accounts->updateSettings()` (a spend cap change),
+ * `reachFrequency->reserve()`, `studies->create()` and
+ * `budgetSchedules->create()`. Each repeats the amount. Without `ads:spend`
+ * these calls answer `403 start_in_app` with the page in the app where a
+ * person does it (rules: `403 rule_raises_spend`); on Google
+ * (`api_draft_only` on `capabilities()`) they always do, also with
+ * `ads:spend`. `pause()` and `delete()` stay open, except on the networks in
+ * `api_stop_in_app` (Google).
+ *
+ * Take the amount from the person's explicit yes; never invent or confirm it
+ * yourself. The calls that start or raise spend are never retried after a
+ * 5xx, a timeout or a lost connection (only a 429), because the first
+ * attempt may have started the ad. Pausing never needs an amount. An ads
+ * error may carry `param` (the field it is about) in the exception's
+ * `getBody()`.
+ *
+ * Budgets are in major currency units (10 = 10 EUR) in the ad account's
+ * currency. Ad accounts are connected and picked in the OmniSocials
+ * dashboard. The scopes `ads:read` and `ads:write` are opt-in on the API key
+ * (the Ads switch); every write also needs `manage_ads` for the person
+ * behind the key. A network without a feature answers
+ * `400 not_supported_on_network`; `capabilities()` lists `features` per
+ * network.
  */
 class Ads extends AbstractResource
 {
     /** "Create an ad" drafts. */
     public readonly AdDrafts $drafts;
 
+    /** Campaigns, ad sets and ads as the network has them, and the import of campaigns made outside OmniSocials. */
+    public readonly AdObjects $objects;
+
+    /** Targeting search, browse, reach estimate and bid suggestions. */
+    public readonly AdTargeting $targeting;
+
+    /** Custom audiences: customer lists, lookalikes, company lists. */
+    public readonly AdAudiences $audiences;
+
+    /** The ads of an OmniSocials campaign: list, add, read, status, review. */
+    public readonly AdCampaignAds $campaignAds;
+
+    /** Lead forms. */
+    public readonly AdLeadForms $leadForms;
+
+    /** The leads the lead forms bring. */
+    public readonly AdLeads $leads;
+
+    /** Pixels, conversion goals, custom conversions and server events. */
+    public readonly AdConversions $conversions;
+
+    /** Live numbers, campaign and ad numbers, timeline, rankings and alerts. */
+    public readonly AdInsights $insights;
+
+    /** Long reports that run in the background. */
+    public readonly AdReports $reports;
+
+    /** Automated rules. */
+    public readonly AdRules $rules;
+
+    /** Your own numbers per campaign and day. */
+    public readonly AdResults $results;
+
+    /** The network's own image and video library. */
+    public readonly AdMedia $media;
+
+    /** Previews drawn by the network. */
+    public readonly AdPreviews $previews;
+
+    /** Partnership ads with creators (Meta). */
+    public readonly AdPartnership $partnership;
+
+    /** Comments on ads. */
+    public readonly AdComments $comments;
+
+    /** One ad account: identities, health, finance, settings, people, activity. */
+    public readonly AdAccounts $accounts;
+
+    /** Reach and frequency buying (Meta). */
+    public readonly AdReachFrequency $reachFrequency;
+
+    /** A/B tests and lift studies (Meta). */
+    public readonly AdStudies $studies;
+
+    /** Planned budget increases (Meta). */
+    public readonly AdBudgetSchedules $budgetSchedules;
+
+    /** Google Ads reports. */
+    public readonly AdGoogle $google;
+
     public function __construct(Client $client)
     {
         parent::__construct($client);
         $this->drafts = new AdDrafts($client);
+        $this->objects = new AdObjects($client);
+        $this->targeting = new AdTargeting($client);
+        $this->audiences = new AdAudiences($client);
+        $this->campaignAds = new AdCampaignAds($client);
+        $this->leadForms = new AdLeadForms($client);
+        $this->leads = new AdLeads($client);
+        $this->conversions = new AdConversions($client);
+        $this->insights = new AdInsights($client);
+        $this->reports = new AdReports($client);
+        $this->rules = new AdRules($client);
+        $this->results = new AdResults($client);
+        $this->media = new AdMedia($client);
+        $this->previews = new AdPreviews($client);
+        $this->partnership = new AdPartnership($client);
+        $this->comments = new AdComments($client);
+        $this->accounts = new AdAccounts($client);
+        $this->reachFrequency = new AdReachFrequency($client);
+        $this->studies = new AdStudies($client);
+        $this->budgetSchedules = new AdBudgetSchedules($client);
+        $this->google = new AdGoogle($client);
     }
 
     /**
@@ -44,9 +149,18 @@ class Ads extends AbstractResource
 
     /**
      * `GET /ads/capabilities` - what each network accepts for a new ad
-     * (goals, media, text limits, buttons, minimum daily budget),
-     * `create_networks` and `network_states` (`live`, `preview` or
-     * `coming_soon`). Requires `ads:read`.
+     * (goals, media, text limits, buttons, minimum daily budget, and per
+     * network `bid_strategies`, `settings` and `ad_fields`: the keys its
+     * module reads), `create_networks`, `network_states` (`live`, `preview`
+     * or `coming_soon`), `features` (per network, the feature keys its API
+     * offers here) with `feature_labels`, `targeting_types` (per network, the
+     * types of `targeting->search()` and of `targeting.networks`),
+     * `api_goals` (`lead_generation`, `conversions`, `messages`, `calls`: API
+     * only; each network's goal entry says what it `needs`), `api_draft_only`
+     * (networks where every API caller stops at the draft, also a key with
+     * `ads:spend`: Google) and `api_stop_in_app` (networks where the API may
+     * not even pause or delete a campaign that reached the network: Google).
+     * Requires `ads:read`.
      */
     public function capabilities(): mixed
     {
@@ -81,8 +195,9 @@ class Ads extends AbstractResource
     }
 
     /**
-     * `POST /ads/boost` - boost a published post. Creates a DRAFT boost: no
-     * spend until `activate()`. Takes `post_id`, `ad_account_id`, `budget`
+     * `POST /ads/boost` - boost a published post. Creates a DRAFT boost that
+     * spends nothing; the person starts it in the app. Takes `post_id`,
+     * `ad_account_id`, `budget`
      * (`['type' => 'daily', 'amount' => 5, 'currency' => 'EUR']` in the ad
      * account's currency) and optionally `objective`, `targeting`,
      * `schedule`, `creative` and `name`. TikTok needs
@@ -110,26 +225,19 @@ class Ads extends AbstractResource
     }
 
     /**
-     * `POST /ads/campaigns` - a DRAFT campaign without ads (`ad_account_id`,
-     * `name`, `budget`, optionally `objective`, `targeting`, `schedule`). It
-     * cannot start (`campaign_has_no_ads`): use `ads->drafts->create()` for
-     * a new ad. Requires `ads:write`.
+     * `PATCH /ads/campaigns/:id` - change the `name`, `objective`, `budget`,
+     * `targeting` (also `targeting.network`), `schedule`, or the `settings` of a
+     * campaign that never started (after the start `400 settings_locked`:
+     * make a copy with `duplicate()`).
      *
-     * @param array<string, mixed> $params
-     */
-    public function create(array $params): mixed
-    {
-        return $this->client->post('/ads/campaigns', $params);
-    }
-
-    /**
-     * `PATCH /ads/campaigns/:id` - change the `name`, `budget`, `targeting`
-     * or `schedule`.
-     *
-     * A higher budget on a running campaign RAISES REAL AD SPEND: show the
-     * person the new amount and get their yes first, then pass it again as
-     * `confirm_budget_amount`. Not retried after a 5xx, a timeout or a lost
-     * connection: read the campaign with `get()` to see what happened.
+     * A draft changes with `ads:write`. A campaign that reached the network
+     * changes only with a key that has the opt-in `ads:spend` scope ("Start
+     * ads"); without it, and on Google (`api_draft_only`) always, the call
+     * answers `403 start_in_app` with the page where a person does it in the
+     * app. A higher budget on a running campaign RAISES REAL AD SPEND: show
+     * the person the new amount and get their yes first, then pass it again
+     * as `confirm_budget_amount`. Not retried after a 5xx, a timeout or a
+     * lost connection: read the campaign with `get()` to see what happened.
      * Requires `ads:write`.
      *
      * @param array<string, mixed> $params
@@ -142,6 +250,9 @@ class Ads extends AbstractResource
     /**
      * `POST /ads/campaigns/:id/activate` - START REAL AD SPEND.
      *
+     * Needs a key with the opt-in `ads:spend` scope ("Start ads"); without
+     * it, and on Google (`api_draft_only`) always, the call answers
+     * `403 start_in_app` with the page where a person does it in the app.
      * Show the person the budget (amount, currency, daily or lifetime) and
      * get their yes first; `$confirmBudgetAmount` must equal the campaign's
      * budget amount. A campaign of a draft group answers
@@ -162,11 +273,14 @@ class Ads extends AbstractResource
      * `POST /ads/campaigns/activate-multi` - START REAL AD SPEND on up to 10
      * campaigns.
      *
-     * Every campaign's budget must equal `$confirmBudgetAmount`; show the
-     * person the total (amount x campaigns) and get their yes first.
-     * Answers `results`. Not retried after a 5xx, a timeout or a lost
-     * connection: read the campaigns with `get()` to see what happened.
-     * Requires `ads:write`.
+     * Needs a key with the opt-in `ads:spend` scope ("Start ads"); without
+     * it, and on Google (`api_draft_only`) always, a campaign comes back
+     * `ok: false` with code `start_in_app` and the page where a person starts
+     * it in the app. Every campaign's budget must equal
+     * `$confirmBudgetAmount`; show the person the total (amount x campaigns)
+     * and get their yes first. Answers `results`. Not retried after a 5xx, a
+     * timeout or a lost connection: read the campaigns with `get()` to see
+     * what happened. Requires `ads:write`.
      *
      * @param list<int|string> $campaignIds
      */
@@ -181,7 +295,9 @@ class Ads extends AbstractResource
 
     /**
      * `POST /ads/campaigns/:id/pause` - pause a campaign (also while in
-     * review). Requires `ads:write`.
+     * review). Open with `ads:write`, except on the networks in
+     * `api_stop_in_app` (Google): there a campaign that reached the network
+     * answers `403 start_in_app`. Requires `ads:write`.
      */
     public function pause(int|string $id): mixed
     {
@@ -190,9 +306,12 @@ class Ads extends AbstractResource
 
     /**
      * `POST /ads/campaigns/:id/resume` - resume a paused campaign: it STARTS
-     * REAL AD SPEND again. Show the person the budget and get their yes
-     * first. Not retried after a 5xx, a timeout or a lost connection: read
-     * the campaign with `get()` to see what happened. Requires `ads:write`.
+     * REAL AD SPEND again. Needs a key with the opt-in `ads:spend` scope
+     * ("Start ads"); without it, and on Google (`api_draft_only`) always, the
+     * call answers `403 start_in_app` with the page where a person does it in
+     * the app. Only a paused campaign resumes (`409 not_paused`). Not retried
+     * after a 5xx, a timeout or a lost connection: read the campaign with
+     * `get()` to see what happened. Requires `ads:write`.
      */
     public function resume(int|string $id): mixed
     {
@@ -201,7 +320,9 @@ class Ads extends AbstractResource
 
     /**
      * `DELETE /ads/campaigns/:id` - delete a campaign on the network too. A
-     * campaign that spent is archived: its spend stays in the totals.
+     * campaign that spent is archived: its spend stays in the totals. Open
+     * with `ads:write`, except on the networks in `api_stop_in_app` (Google):
+     * there a campaign that reached the network answers `403 start_in_app`.
      * Requires `ads:write`.
      */
     public function delete(int|string $id): mixed
@@ -210,8 +331,11 @@ class Ads extends AbstractResource
     }
 
     /**
-     * `GET /ads/overview` - accounts, campaigns per status and total spend.
-     * Requires `ads:read`.
+     * `GET /ads/overview` - accounts, campaigns per status and the totals.
+     * `totals.spend` is null when the campaigns use more than one currency
+     * (`totals.currency` names the one currency); read `totals_by_currency`,
+     * one row per currency with `currency`, `spend`, `impressions` and
+     * `clicks`. Requires `ads:read`.
      */
     public function overview(): mixed
     {
@@ -252,8 +376,45 @@ class Ads extends AbstractResource
         return $this->client->post('/ads/research/keywords/metrics', $params);
     }
 
+    /**
+     * `POST /ads/campaigns/bulk-status` - pause (`paused`) or resume
+     * (`active`) up to 50 OmniSocials campaigns.
+     *
+     * Resuming STARTS REAL AD SPEND again: every campaign's budget must equal
+     * `$confirmBudgetAmount` (one amount for all, checked before any change);
+     * show the person the total and get their yes first. Resuming needs a key
+     * with `ads:spend`: without it, and on Google always, a result answers
+     * `start_in_app`. Pausing needs no amount (Google: `start_in_app`).
+     * Answers `results` per campaign. Not retried after a 5xx, a timeout or a
+     * lost connection: read the campaigns with `get()` to see what happened.
+     * Requires `ads:write`.
+     *
+     * @param list<int|string> $campaignIds
+     */
+    public function bulkStatus(array $campaignIds, string $status, int|float|null $confirmBudgetAmount = null): mixed
+    {
+        $body = ['campaign_ids' => array_values($campaignIds), 'status' => $status];
+        if ($confirmBudgetAmount !== null) {
+            $body['confirm_budget_amount'] = $confirmBudgetAmount;
+        }
+        return $this->client->post('/ads/campaigns/bulk-status', $body, Client::RETRY_RATE_LIMIT);
+    }
+
+    /**
+     * `POST /ads/campaigns/:id/duplicate` - copy an OmniSocials campaign as
+     * a new DRAFT (same ad account, goal, budget, targeting, settings and
+     * ads; optional `name`). A draft never spends. Requires `ads:write`.
+     *
+     * @param array{name?: string} $params
+     */
+    public function duplicate(int|string $id, array $params = []): mixed
+    {
+        return $this->client->post($this->campaignPath($id) . '/duplicate', $this->optionalBody($params));
+    }
+
     private function campaignPath(int|string $id): string
     {
         return '/ads/campaigns/' . $this->encodePathSegment((string) $id);
     }
+
 }

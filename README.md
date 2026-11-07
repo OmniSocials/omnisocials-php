@@ -342,14 +342,38 @@ $client->posts->delete($one['data']['id']);  // returns null (204)
 
 `retry` re-publishes only the platforms that failed, on the same post; platforms that already succeeded are never posted again. It is asynchronous: a 200 means the retry is queued, so poll `get` for the outcome. Max 3 retries per platform.
 
+These calls throw a 409 `ApiException` and change nothing when the post is not in a state for them:
+
+- `post_publishing`: `update` or `delete` while the post is publishing (status `posting`) or a retry publishes one of its channels. Poll `get` until the status is `published`, `warning` or `failed`. An `update` with only `tags` still works.
+- `review_required`: changes were requested on the post (`approval_status` `rejected`), so `publish`, or an `update` that would schedule it, is refused. It needs a new review: create it again with `approval_workflow_id`. Saving it as a draft works.
+- `retry_in_progress`: `retry` while another retry of the post runs.
+- `media_processing`: a media id in `create`, `createAndPublish` or `update` is still processing. Wait until `$client->media->get($id)` says `ready`, then send the same request again. A file whose processing failed answers `400 invalid_media`: upload it again.
+
 ### Approve or reject a post
 
 ```php
-$client->posts->approve($id);                                    // approve the current approval-workflow step
-$client->posts->reject($id, "Wrong CTA link, please fix.");      // reject and stop the workflow (comment optional, or omit / pass null)
+use OmniSocials\Exception\ApiException;
+
+// Read the step you review first, then name it on the decision.
+$review = $client->posts->getApproval($id)['data'];
+$step = $review['current_step'];
+
+try {
+    $client->posts->approve($id, stepOrder: $step); // approve the step you reviewed
+    // or: reject and stop the workflow (comment optional, or omit / pass null)
+    // $client->posts->reject($id, 'Wrong CTA link, please fix.', stepOrder: $step);
+} catch (ApiException $e) {
+    if ($e->getErrorCode() !== 'step_changed') {
+        throw $e;
+    }
+    // Somebody decided since you read it: nothing was decided. Read the approval again.
+    echo 'The review is on step ', $e->getBody()['error']['current_step_order'], "\n";
+}
 ```
 
-Only works on a post with `approval_status: "pending"` (`status: "in_approval"`). Both act on behalf of the user who owns the API key, who must be a listed approver for the workflow's CURRENT step — steps approve in order, so being an approver on a later step is not enough yet (throws a `PermissionDeniedException` with error code `forbidden`). Approving the last step finalizes the post (`scheduled` or `posting`); rejecting stops the whole workflow immediately, not just the current step.
+Only works on a post with `approval_status: "pending"` (`status: "in_approval"`). Both act on behalf of the user who owns the API key, who must be a listed approver for the workflow's CURRENT step. Steps approve in order, so being an approver on a later step is not enough yet (throws a `PermissionDeniedException` with error code `forbidden`). Approving the last step finalizes the post (`scheduled` or `posting`); rejecting stops the whole workflow immediately, not just the current step.
+
+`$stepOrder` is optional: the `current_step` of `getApproval`. When the review is on another step now (somebody decided since you read it, or a retried call already went through), nothing is decided and the call throws a 409 `ApiException` with code `step_changed` and `error.current_step_order`, the step the review is on now. Without it the call acts on whatever step is current, so a retry after a timeout could approve the next step too. `approve($id)` and `reject($id, $comment)` still work.
 
 ### Read the approval review
 
@@ -387,7 +411,7 @@ echo $upload['data']['id'];
 print_r($upload['compatibility']);
 ```
 
-Videos over 100MB are processed in the background and come back with status `"processing"`. Every upload response includes a `compatibility` block listing connected platforms that would reject the file.
+Videos over 100MB are processed in the background and come back with status `"processing"`; when such a file cannot be queued, the call throws a 503 `processing_unavailable` (send the same request again in a minute). Every upload response includes a `compatibility` block listing connected platforms that would reject the file.
 
 ### Upload a local file (multipart)
 
@@ -559,6 +583,8 @@ foreach ($accounts['data'] as $account) {
 }
 $ig = $client->accounts->get($accounts['data'][0]['id']);
 ```
+
+`status` is `active` or `needs_reconnect` (the token was revoked or expired; Bluesky also when its sign-in could not be renewed). Posts to a `needs_reconnect` account fail until it is reconnected in the OmniSocials app. OmniSocials Connect customer workspaces can also show `pick_pending` (Facebook, Connect customers only: no Page chosen yet).
 
 ## Analytics
 
@@ -765,11 +791,11 @@ try {
 
 ## Ads
 
-Boost a published post or create a new ad on Meta, Pinterest, TikTok, LinkedIn, X and Google. Ads spend real money, so every call that starts or raises spend asks for the amount again: `ads->activate()`, `ads->activateMulti()`, `ads->drafts->launch()` and a budget raise through `ads->update()`. Show the person the amount first and pass it only after they agree. These calls (and `ads->resume()`) are not retried after a 5xx or a timeout, because the first attempt may have started the ad: read the campaign or the draft to see what happened.
+Boost a published post or create a new ad on Meta, Pinterest, TikTok, LinkedIn, X and Google. Boosts and new ads are drafts: your code writes the draft, and the person who pays sees the amount and starts the ad in OmniSocials from the draft's `review_url`. A key starts and raises spend itself only with the opt-in **Start ads** switch (scope `ads:spend`). Without it `ads->activate()`, `ads->activateMulti()`, `ads->resume()`, `ads->drafts->launch()`, a budget raise or any change of a campaign that reached the network through `ads->update()`, and the parity calls that switch something on or raise a budget answer `403 start_in_app`, and the error message names the page where the person does it. Google (`api_draft_only` on `ads->capabilities()`) always stops at the draft, also with `ads:spend`. `ads->pause()` and `ads->delete()` stay open, except on the networks in `api_stop_in_app` (Google), where a campaign that reached the network also answers `403 start_in_app`. Only a paused campaign resumes (`409 not_paused`). The calls that start or raise spend repeat the amount (`confirm_budget_amount`) and are not retried after a 5xx or a timeout (only a 429), because the first attempt may have started the ad.
 
-The `ads:read` and `ads:write` scopes are opt-in: create the API key with **Ads** switched on (Settings, API). A key without them gets `403 insufficient_scope`. Ad accounts are connected and picked in the OmniSocials dashboard. Budgets are in major units (10 = 10 EUR) in the ad account's currency. Ad account and campaign ids come back as strings (`'51'`); the methods take an id as a string or an int.
+The `ads:read` and `ads:write` scopes are opt-in: create the API key with **Ads** switched on (Settings, API). `ads:spend` is the **Start ads** switch under it, offered only to a person with `manage_ads`. A key without a scope it needs gets `403 insufficient_scope`. Ad accounts are connected and picked in the OmniSocials dashboard. Budgets are in major units (10 = 10 EUR) in the ad account's currency: a draft whose `budget.currency` differs from an attached ad account's currency gets `400 currency_mismatch`, and an ads error may name the field in `$e->getBody()['error']['param']` (here `'budget.currency'`). Ad account and campaign ids come back as strings (`'51'`); the methods take an id as a string or an int.
 
-### Create an ad (draft, then launch)
+### Create an ad (a draft the person starts)
 
 ```php
 $caps = $client->ads->capabilities();
@@ -791,15 +817,11 @@ $draft = $client->ads->drafts->create([
     ]],
 ])['data'];
 
-// A draft spends nothing. Hand $draft['review_url'] to the person, or start it
-// after they confirmed 10 EUR a day per network:
-$launch = $client->ads->drafts->launch($draft['group_id'], ['confirm_budget_amount' => 10])['data'];
-foreach ($launch['results'] as $result) {
-    echo $result['platform'], ': ', $result['ok'] ? 'started' : $result['error'], "\n";
-}
+// A draft spends nothing. The person checks it and starts it in OmniSocials:
+echo 'Check and start the ad here: ', $draft['review_url'], "\n";
 ```
 
-A draft needs no ad account; `$client->ads->drafts->attachAccount($groupId, ['platform' => 'meta', 'ad_account_id' => '51'])` sets one, and `campaigns[].readiness` says what still stops a network. `$client->ads->drafts->update($groupId, [...])` replaces the whole draft (HTTP PUT), so send every field again. On Meta an ad can carry a second upright 9:16 file for Stories and Reels: `'placement_media' => ['stories_reels' => ['url' => ..., 'type' => ...]]`.
+A draft needs no ad account; `$client->ads->drafts->attachAccount($groupId, ['platform' => 'meta', 'ad_account_id' => '51'])` sets one, and `campaigns[].readiness` says what still stops a network. With a key that has `ads:spend`, `$client->ads->drafts->launch($draft['group_id'], ['confirm_budget_amount' => 10])` starts the draft after the person agreed to the amount; Google is skipped with code `start_in_app`. Without `ads:spend` the call answers `403 start_in_app`. `$client->ads->drafts->update($groupId, [...])` replaces the whole draft (HTTP PUT), so send every field again. On Meta an ad can carry a second upright 9:16 file for Stories and Reels: `'placement_media' => ['stories_reels' => ['url' => ..., 'type' => ...]]`.
 
 ### Boost a post
 
@@ -814,15 +836,52 @@ $boost = $client->ads->boost([
     'targeting' => ['countries' => ['NL']],
 ])['data'];
 
-// The boost is a draft. Start it only after the person confirmed 5 a day:
-$client->ads->activate($boost['id'], 5);
+// The boost is a draft: the person starts it in OmniSocials.
+echo $boost['status'], "\n"; // "draft"
 ```
 
-`$client->ads->boostMulti()` makes one draft boost per ad account (up to 10, the same budget each). `$client->ads->suggestions()` lists posts that do better than your median, `$client->ads->overview()` the totals, and `$client->ads->list()`, `get()`, `pause()`, `resume()` and `delete()` manage campaigns. Keyword ideas through the connected Google Ads account: `$client->ads->researchKeywords(['keywords' => ['running shoes'], 'country' => 'NL'])` and `$client->ads->keywordMetrics(['keywords' => [...]])`.
+`$client->ads->boostMulti()` makes one draft boost per ad account (up to 10, the same budget each). `$client->ads->suggestions()` lists posts that do better than your median, `$client->ads->overview()` the totals (`totals.spend` is null when the campaigns use more than one currency: read `totals_by_currency`, one row per currency), and `$client->ads->list()`, `get()`, `pause()` and `delete()` manage campaigns. Keyword ideas through the connected Google Ads account: `$client->ads->researchKeywords(['keywords' => ['running shoes'], 'country' => 'NL'])` and `$client->ads->keywordMetrics(['keywords' => [...]])`.
+
+
+### The rest of the Ads API
+
+Each group is a property of `$client->ads`. A network without a feature answers `400 not_supported_on_network`; `$client->ads->capabilities()['data']['features']` lists what each network offers.
+
+| Property | What it covers |
+|----------|----------------|
+| `objects` | the live tree of an ad account (`tree()`), one campaign, ad set or ad (`get()`, `update()`, `setStatus()`, `duplicate()`), the import of campaigns made outside OmniSocials (`importStatus()`, `startImport()`, `listExternal()`, `getExternal()`) |
+| `targeting` | `search()`, `browse()`, `reachEstimate()`, `bidSuggestions()` |
+| `audiences` | customer lists, lookalikes and company lists: `list()`, `create()`, `get()`, `update()`, `delete()`, `addMembers()`, `removeMembers()`, `addCompanies()` (raw emails and phones are hashed before they leave) |
+| `campaignAds` | the ads of a campaign: `list()`, `add()` (created paused), `get()`, `setStatus()`, `review()` |
+| `leadForms`, `leads` | lead forms (`list()`, `create()`, `get()`, `update()`, `delete()`, `sendTestLead()`) and their leads (`list()`, `counts()`, `update()`) |
+| `conversions` | `destinations()`, `goals()`, `createCustom()`, `sendEvents()` |
+| `insights`, `reports` | `query()`, `campaign()`, `ad()`, `timeline()`, `performance()`, `alerts()`; background reports (`list()`, `start()`, `get()`) |
+| `rules` | automated rules: `list()`, `create()`, `templates()`, `preview()`, `activity()`, `undo()`, `get()`, `update()`, `delete()`, `previewSaved()`, `runs()` |
+| `results` | your own numbers per campaign and day: `list()`, `upload()`, `totals()`, `metrics()`, `putMetric()` |
+| `media`, `previews`, `partnership`, `comments` | the network's media library, previews drawn by the network (`create()`, `forAd()`), Meta partnership ads (`listContent()`, `listPermissions()`, `setPermission()`), comments on ads |
+| `accounts` | one ad account: `health()`, `finance()`, `updateSettings()`, `listUsers()`, `addUser()`, `removeUser()`, `activity()`, `businesses()`, `dsa()`, `hierarchy()`, `identities()` |
+| `reachFrequency`, `studies`, `budgetSchedules` | Meta reach and frequency, A/B tests, planned budget increases |
+| `google` | Google reports: `searchTerms()`, `recommendations()`, `keywords()`, `assets()`, `sharedBudgets()`, `bidStrategies()`, `adSchedule()`, `labels()`, `localServicesLeads()` |
+
+On campaigns: `$client->ads->duplicate($id)` (a new draft) and `$client->ads->bulkStatus($ids, 'paused')`.
+
+```php
+// Search an interest, then target it on Meta in a draft.
+$items = $client->ads->targeting->search(['ad_account_id' => 51, 'type' => 'interest', 'q' => 'yoga'])['data']['items'];
+$targeting = [
+    'countries' => ['NL'],
+    'networks' => ['meta' => ['include' => ['interest' => [['id' => $items[0]['id'], 'name' => $items[0]['name']]]]]],
+];
+
+// Pause one ad set made outside OmniSocials (no amount needed to pause).
+$client->ads->objects->setStatus(51, 'ad_set', '23851', 'paused');
+```
+
+The same money rule holds here: switching anything on (`objects->setStatus()`, `campaignAds->setStatus()`, `bulkStatus()` with `active`), adding ads to a running campaign (`campaignAds->add()`), a change of an object on the network (`objects->update()`, `objects->duplicate()`), a rule that can raise spend (`rules->create()` and `rules->update()` with `confirm_max_daily_budget`, `rules->undo()`), a spend cap change (`accounts->updateSettings()`), a reach and frequency reservation (`reachFrequency->reserve()`), a study (`studies->create()`) and a planned budget increase (`budgetSchedules->create()`) need a key with `ads:spend` (else, and on Google always, `403 start_in_app`; a rule: `403 rule_raises_spend`). Each needs the amount from the person's explicit yes, and none of them is retried after a 5xx or a timeout. Rules that notify, pause or lower a budget work with `ads:write`, and at run time a rule never acts on Google. Pausing, deleting and archiving stay open, except on Google.
 
 ## Webhooks
 
-Events: `post.scheduled`, `post.published`, `post.failed`, `post.approved` (the last step of a post's approval workflow is approved) and `post.rejected` (an approver rejects the post; it will not publish). The two approval events carry `data.approval` with `status`, `decided_by` (the approver's user id) and `reason` (null on `post.approved`), and an empty `data.targets`. `ad.status_changed` fires when an ad campaign changes status (for example `pending_review` to `active` or `rejected`); its `data` is the campaign, not a post: `campaign_id`, `workspace_id`, `name`, `platform`, `campaign_type`, `status`, `previous_status`, `external_campaign_id` and `budget`.
+Events: `post.scheduled`, `post.published`, `post.failed`, `post.approved` (the last step of a post's approval workflow is approved) and `post.rejected` (an approver rejects the post; it will not publish). The two approval events carry `data.approval` with `status`, `decided_by` (the approver's user id) and `reason` (null on `post.approved`), and an empty `data.targets`. `ad.status_changed` fires when an ad campaign changes status (for example `pending_review` to `active` or `rejected`); its `data` is the campaign, not a post: `campaign_id`, `workspace_id`, `name`, `platform`, `campaign_type`, `status`, `previous_status`, `external_campaign_id` and `budget`. More ad events: `ad.created`, `ad.updated`, `ad.review`, `ad.delivery_issue`, `campaign.created`, `campaign.updated`, `campaign.budget` (these carry the campaign plus `details`), `lead.received`, `ads.sync_failed`, `ads.sync_recovered`, `ads.initial_sync_completed` and `ad_rule.triggered`. Subscribing to `ad.status_changed` or any other Ads event (`ad.*`, `campaign.*`, `lead.*`, `ads.*`, `ad_rule.*`) needs the `ads:read` scope on the key and `access_ads` for its person (`403 insufficient_scope` / `insufficient_permission`).
 
 ### Manage endpoints
 
@@ -837,9 +896,11 @@ $client->webhooks->list();
 $client->webhooks->get($webhook['data']['id']);
 $client->webhooks->update($webhook['data']['id'], ['is_active' => false]);
 $rotated = $client->webhooks->rotateSecret($webhook['data']['id']);
-echo $rotated['data']['secret']; // the old secret stops working
+echo $rotated['data']['secret']; // the old secret keeps signing for 24 hours
 $client->webhooks->delete($webhook['data']['id']);
 ```
+
+Every webhook carries `workspace_id`. `list` and `get` also return the organisation-wide webhooks of the key's organisation (`workspace_id` null, made in the OmniSocials dashboard; they receive the events of every workspace), and `update`, `delete` and `rotateSecret` work on them too. Webhooks you create through the API belong to the key's workspace. When the person behind a webhook loses access to the organisation or workspace, OmniSocials switches the webhook off: `is_active` is false and `last_failure['error']` says why. `update($id, ['is_active' => true])` switches it on again.
 
 ### Verify deliveries (plain PHP endpoint)
 
@@ -913,6 +974,28 @@ Route::post('/omnisocials/webhook', function (Request $request) {
 ```
 
 `Webhooks::verifySignature()` uses a constant-time comparison (`hash_equals`), rejects timestamps older than the tolerance (replay protection), throws `WebhookVerificationException` on any failure, and returns the parsed event array on success.
+
+### Rotate the secret without missing deliveries
+
+For 24 hours after `rotateSecret()`, every delivery carries two headers: `X-OmniSocials-Signature`, signed with the new secret, and `X-OmniSocials-Signature-Previous`, signed with the old secret (same format, same timestamp and body). Verify the first with the new secret and, when that fails, the second with the old one:
+
+```php
+try {
+    $event = Webhooks::verifySignature(
+        $payload,
+        $_SERVER['HTTP_X_OMNISOCIALS_SIGNATURE'] ?? '',
+        getenv('OMNISOCIALS_WEBHOOK_SECRET') // the new secret
+    );
+} catch (WebhookVerificationException $e) {
+    $previous = $_SERVER['HTTP_X_OMNISOCIALS_SIGNATURE_PREVIOUS'] ?? '';
+    if ($previous === '') {
+        throw $e;
+    }
+    $event = Webhooks::verifySignature($payload, $previous, getenv('OMNISOCIALS_WEBHOOK_SECRET_OLD')); // the old secret
+}
+```
+
+Rotating again within the 24 hours replaces the previous secret with the one you just rotated out.
 
 ## Limits and feature requests
 
@@ -993,7 +1076,7 @@ try {
 
 ## API scopes
 
-Each API key carries scopes: `posts:read`, `posts:write`, `media:write`, `accounts:read`, `analytics:read`, `webhooks:manage`, plus the opt-in `automations:read` / `automations:write` for comment-to-DM automations and `ads:read` / `ads:write` for ads. A call with a missing scope throws `PermissionDeniedException` with code `insufficient_scope`.
+Each API key carries scopes: `posts:read`, `posts:write`, `media:write`, `accounts:read`, `analytics:read`, `webhooks:manage`, plus the opt-in `automations:read` / `automations:write` for comment-to-DM automations `ads:read` / `ads:write` for ads, and `ads:spend` (the **Start ads** switch) to start ads and raise their spend. A call with a missing scope throws `PermissionDeniedException` with code `insufficient_scope`.
 
 ## Documentation
 

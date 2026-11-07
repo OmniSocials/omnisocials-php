@@ -25,7 +25,7 @@ use OmniSocials\Exception\AuthenticationException;
  */
 class Client
 {
-    public const VERSION = '0.15.0';
+    public const VERSION = '0.16.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
@@ -156,14 +156,21 @@ class Client
         return $this->request('PATCH', $path, [], $body, null, $retry);
     }
 
-    public function put(string $path, array $body): mixed
+    public function put(string $path, array $body, ?string $retry = null): mixed
     {
-        return $this->request('PUT', $path, [], $body);
+        return $this->request('PUT', $path, [], $body, null, $retry);
     }
 
-    public function delete(string $path): mixed
+    /**
+     * DELETE, optionally with query params (for example `ad_account_id`) or
+     * a JSON body (removing people from a customer list).
+     *
+     * @param array<string, mixed>      $query
+     * @param array<string, mixed>|null $body
+     */
+    public function delete(string $path, array $query = [], ?array $body = null): mixed
     {
-        return $this->request('DELETE', $path);
+        return $this->request('DELETE', $path, $query, $body);
     }
 
     /**

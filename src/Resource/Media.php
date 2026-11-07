@@ -75,7 +75,9 @@ class Media extends AbstractResource
     /**
      * `POST /media/upload-from-url` - the server fetches a public URL
      * (files up to 1GB; large videos finish processing in the background and
-     * come back with status "processing").
+     * come back with status "processing"). A file over 100 MB that could not
+     * be queued for processing answers `503 processing_unavailable`: send the
+     * same request again in a minute.
      *
      * @param array{url: string, filename?: string, name?: string, folder?: string, folder_id?: string, pdf_mode?: 'slides'|'document'} $params
      */

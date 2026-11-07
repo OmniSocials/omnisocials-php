@@ -216,6 +216,12 @@ class Posts extends AbstractResource
      * `trial_reel` (`['strategy' => 'MANUAL' | 'SS_PERFORMANCE']` for an
      * Instagram Trial Reel, else `null`).
      *
+     * A media id that is still processing (a large video is checked and
+     * converted after upload) answers `409 media_processing` and nothing is
+     * created: wait until `$client->media->get($id)` says `ready`, then send
+     * the same request again. A file whose processing failed answers
+     * `400 invalid_media`: upload it again.
+     *
      * @param array<string, mixed> $params
      */
     public function create(array $params): mixed
@@ -228,7 +234,8 @@ class Posts extends AbstractResource
      * immediately. Same params as `create()` minus `scheduled_at`; see
      * `create()` for the `warnings` array (X link posts, and the `image_fit`
      * entries steered by `media_fit`), the `x_credits_insufficient`
-     * schedule-time gate on X link posts and `comment_dm_automation`.
+     * schedule-time gate on X link posts, `comment_dm_automation` and the
+     * `409 media_processing` / `400 invalid_media` answers.
      *
      * @param array<string, mixed> $params
      */
@@ -284,6 +291,15 @@ class Posts extends AbstractResource
      * works on every post, published ones included. To change a few tags on
      * many posts at once, use `$client->tags->apply()`.
      *
+     * `409` answers, where nothing is changed: `post_publishing` while the
+     * post is publishing (status `posting`) or a retry publishes one of its
+     * channels (poll `get()` until `published`, `warning` or `failed`; an
+     * update with only `tags` still works); `review_required` when changes
+     * were requested on the post (`approval_status` `rejected`) and the
+     * update would schedule it (it needs a new review: create it again with
+     * `approval_workflow_id`; saving it as a draft works);
+     * `media_processing` as on `create()`.
+     *
      * @param array<string, mixed> $params
      */
     public function update(string $id, array $params): mixed
@@ -292,7 +308,11 @@ class Posts extends AbstractResource
     }
 
     /**
-     * `DELETE /posts/:id` - remove a post from OmniSocials (the live post stays on the platform). Returns null (204).
+     * `DELETE /posts/:id` - remove a post from OmniSocials (the live post
+     * stays on the platform). Returns null (204). While the post is
+     * publishing (status `posting`) or a retry publishes one of its
+     * channels, the answer is `409 post_publishing` and nothing is deleted:
+     * poll `get()` until `published`, `warning` or `failed`, then delete it.
      */
     public function delete(string $id): mixed
     {
@@ -303,7 +323,10 @@ class Posts extends AbstractResource
      * `POST /posts/:id/publish` - publish a draft or scheduled post now.
      * Can throw the `402 x_credits_insufficient` gate described on
      * `create()` if publishing this X link post would push reserved
-     * credits past the company's balance.
+     * credits past the company's balance. A post on which changes were
+     * requested in its approval workflow (`approval_status` `rejected`)
+     * answers `409 review_required`: it publishes only after a new review
+     * (create it again with `approval_workflow_id`).
      */
     public function publish(string $id): mixed
     {
@@ -315,7 +338,10 @@ class Posts extends AbstractResource
      * `warning` (partially failed) post, on the same post. Only the platforms
      * that failed are re-published; platforms that already succeeded are
      * never posted again. Asynchronous: a 200 means the retry is queued -
-     * poll `get()` for the outcome. Max 3 retries per platform.
+     * poll `get()` for the outcome. Max 3 retries per platform. While another
+     * retry runs (a second request, the dashboard, the automatic retry) the
+     * answer is `409 retry_in_progress` and nothing is queued: poll `get()`
+     * and retry once the post is `failed` or `warning` again.
      */
     public function retry(string $id): mixed
     {
@@ -325,30 +351,49 @@ class Posts extends AbstractResource
     /**
      * `POST /posts/:id/approve` - approve the current step of a post's
      * approval workflow, on behalf of the user who owns this API key. That
-     * user must be a listed approver for the workflow's CURRENT step -
+     * user must be a listed approver for the workflow's CURRENT step:
      * steps approve in order, so an approver on a later step gets a 403
      * `forbidden` error until earlier steps clear. Only works on a post
      * with `approval_status: "pending"`. If this is the last step, the
      * post finalizes immediately (`scheduled` or `posting`); otherwise it
      * stays `in_approval` and the next step's approvers are notified.
+     *
+     * Pass `$stepOrder`: the `current_step` of `getApproval()`, the step
+     * you reviewed. When the review is on another step now (somebody
+     * decided since you read it, or a retried call already went through),
+     * nothing is approved and the call throws a 409 `ApiException` with
+     * code `step_changed`; `$e->getBody()['error']['current_step_order']`
+     * is the step the review is on now. Read the approval again before you
+     * decide. Without `$stepOrder` the call approves whatever step is
+     * current, so a retry after a timeout can approve the next step too.
      */
-    public function approve(string $id): mixed
+    public function approve(string $id, ?int $stepOrder = null): mixed
     {
-        return $this->client->post('/posts/' . $this->encodePathSegment($id) . '/approve');
+        $body = $stepOrder !== null ? ['step_order' => $stepOrder] : null;
+        return $this->client->post('/posts/' . $this->encodePathSegment($id) . '/approve', $body);
     }
 
     /**
      * `POST /posts/:id/reject` - reject a post's approval workflow, on
      * behalf of the user who owns this API key. Same approver requirement
      * as `approve()`. Unlike approval, a rejection stops the WHOLE workflow
-     * immediately (not just the current step) - the post's status becomes
-     * `rejected`. `$comment` is optional and, when given, is shown to the
-     * requester and other approvers in the post's review thread.
+     * immediately (not just the current step): the post's status becomes
+     * `rejected`. `$comment` is optional (max 2000 characters) and, when
+     * given, is shown to the requester and other approvers in the post's
+     * review thread. `$stepOrder` works as on `approve()`: when the review
+     * moved on, nothing is rejected and the call throws a 409
+     * `step_changed` `ApiException` with `current_step_order` in its body.
      */
-    public function reject(string $id, ?string $comment = null): mixed
+    public function reject(string $id, ?string $comment = null, ?int $stepOrder = null): mixed
     {
-        $body = $comment !== null ? ['comment' => $comment] : null;
-        return $this->client->post('/posts/' . $this->encodePathSegment($id) . '/reject', $body);
+        $body = [];
+        if ($comment !== null) {
+            $body['comment'] = $comment;
+        }
+        if ($stepOrder !== null) {
+            $body['step_order'] = $stepOrder;
+        }
+        return $this->client->post('/posts/' . $this->encodePathSegment($id) . '/reject', $body === [] ? null : $body);
     }
 
     /**
