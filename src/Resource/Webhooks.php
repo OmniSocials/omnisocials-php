@@ -35,7 +35,12 @@ class Webhooks extends AbstractResource
      * post.rejected, and for ads ad.status_changed, ad.created, ad.updated,
      * ad.review, ad.delivery_issue, campaign.created, campaign.updated,
      * campaign.budget, lead.received, ads.sync_failed, ads.sync_recovered,
-     * ads.initial_sync_completed and ad_rule.triggered). The `data` of an
+     * ads.initial_sync_completed and ad_rule.triggered, and for X statistics
+     * x_statistics.paused and x_statistics.resumed: the organisation's X
+     * statistics stopped at 0 credits or started again after a top-up, one
+     * delivery per workspace with X, `data` `{ workspace_id, account_id,
+     * reason }` with reason `insufficient_credits` or `credits_added`). The
+     * `data` of an
      * ad.status_changed delivery is the campaign, not a post: `campaign_id`,
      * `workspace_id`, `name`, `platform`, `campaign_type`, `status`,
      * `previous_status`, `external_campaign_id` and `budget`; the other

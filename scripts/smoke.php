@@ -149,11 +149,15 @@ $surface = [
     ],
     'accounts' => [
         'class' => OmniSocials\Resource\Accounts::class,
-        'methods' => ['list', 'get'],
+        'methods' => ['list', 'get', 'update'],
     ],
     'analytics' => [
         'class' => OmniSocials\Resource\Analytics::class,
-        'methods' => ['post', 'posts', 'overview', 'accounts', 'bestTimes', 'tags'],
+        'methods' => ['post', 'posts', 'refreshPost', 'overview', 'accounts', 'bestTimes', 'tags'],
+    ],
+    'credits' => [
+        'class' => OmniSocials\Resource\Credits::class,
+        'methods' => ['get'],
     ],
     'locations' => [
         'class' => OmniSocials\Resource\Locations::class,
@@ -457,6 +461,54 @@ checkThrows(
 usleep(1_200_000); // let the slow answer finish before counting
 check(count($requests()) === 1, 'ads->drafts->launch after a timeout is sent exactly once');
 
+echo "\n== X statistics on credits against the stub ==\n";
+
+$requests = $stub([200]);
+$adsClient->accounts->update('1234_x', ['x_statistics' => ['posts' => 'light', 'followers' => 'daily']]);
+$adsClient->accounts->update('1234_x', ['x_statistics' => ['followers' => 'off']]);
+$adsClient->accounts->update('1234_x', ['x_statistics' => [
+    'posts' => 'custom',
+    'post_schedule' => ['at' => ['1h', '1d'], 'then_every' => '7d', 'until' => '90d'],
+]]);
+$adsClient->accounts->update('1234_x', ['x_statistics' => null]);
+$adsClient->analytics->refreshPost(9123);
+$adsClient->credits->get();
+$sent = $requests();
+check(
+    $sent[0]['method'] === 'PATCH' && $sent[0]['uri'] === '/v1/accounts/1234_x'
+        && $sent[0]['body'] === '{"x_statistics":{"posts":"light","followers":"daily"}}',
+    'accounts->update PATCHes /accounts/:id with x_statistics'
+);
+check($sent[1]['body'] === '{"x_statistics":{"followers":"off"}}', 'accounts->update sends only the keys given');
+check(
+    $sent[2]['body'] === '{"x_statistics":{"posts":"custom","post_schedule":{"at":["1h","1d"],"then_every":"7d","until":"90d"}}}',
+    'accounts->update sends post_schedule'
+);
+check($sent[3]['body'] === '{"x_statistics":null}', 'accounts->update with x_statistics null sends null');
+check(
+    $sent[4]['method'] === 'POST' && $sent[4]['uri'] === '/v1/analytics/posts/9123/refresh' && $sent[4]['body'] === '',
+    'analytics->refreshPost POSTs /analytics/posts/:id/refresh without a body'
+);
+check($sent[5]['method'] === 'GET' && $sent[5]['uri'] === '/v1/credits', 'credits->get GETs /credits');
+
+$requests = $stub([502]);
+checkThrows(static fn () => $adsClient->analytics->refreshPost(9123), ServerException::class, 'analytics->refreshPost throws ServerException on a 502');
+check(count($requests()) === 1, 'analytics->refreshPost after a 502 is sent exactly once');
+$requests = $stub([429, 200]);
+$adsClient->analytics->refreshPost('9123');
+check(count($requests()) === 2, 'analytics->refreshPost after a 429 is retried');
+$requests = $stub(['slow', 200]);
+checkThrows(
+    static fn () => $hasty->analytics->refreshPost(9123),
+    ApiConnectionException::class,
+    'analytics->refreshPost throws ApiConnectionException on a timeout'
+);
+usleep(1_200_000); // let the slow answer finish before counting
+check(count($requests()) === 1, 'analytics->refreshPost after a timeout is sent exactly once');
+$requests = $stub([502, 200]);
+$adsClient->credits->get();
+check(count($requests()) === 2, 'credits->get (a read) after a 502 is retried');
+
 echo "\n== Ads API parity calls against the stub ==\n";
 
 $ads = $adsClient->ads;
@@ -727,6 +779,7 @@ echo "All smoke tests passed.\n";
 echo "- Client constructs with named args, env fallback via getenv, missing key throws AuthenticationException\n";
 echo "- 11 resources expose all DESIGN.md inventory methods plus health(), and ads->drafts its 7\n";
 echo "- Ads calls send the right method, path and body; spend calls are sent once after a 502 or a timeout\n";
+echo "- accounts->update sends only the x_statistics keys given (null kept); analytics->refreshPost is sent once after a 502 or a timeout, retried after a 429; credits->get\n";
 echo "- Ads API parity: 20 sub-resources + 2 campaign calls cover the 108 routes; the 10 new spend calls are sent once after a 502\n";
 echo "- An id stays inside one encoded path segment; an id of \"\", \".\" or \"..\" is refused before sending\n";
 echo "- Exception hierarchy and status mapping correct (RateLimitException::getRetryAfter works)\n";

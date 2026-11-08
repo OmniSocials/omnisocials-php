@@ -26,7 +26,7 @@ use OmniSocials\Exception\OmniSocialsException;
  */
 class Client
 {
-    public const VERSION = '0.17.0';
+    public const VERSION = '0.18.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
@@ -46,6 +46,7 @@ class Client
     public readonly Resource\ApprovalWorkflows $approvalWorkflows;
     public readonly Resource\Accounts $accounts;
     public readonly Resource\Analytics $analytics;
+    public readonly Resource\Credits $credits;
     public readonly Resource\Audio $audio;
     public readonly Resource\Locations $locations;
     public readonly Resource\Pinterest $pinterest;
@@ -101,6 +102,7 @@ class Client
         $this->approvalWorkflows = new Resource\ApprovalWorkflows($this);
         $this->accounts = new Resource\Accounts($this);
         $this->analytics = new Resource\Analytics($this);
+        $this->credits = new Resource\Credits($this);
         $this->audio = new Resource\Audio($this);
         $this->locations = new Resource\Locations($this);
         $this->pinterest = new Resource\Pinterest($this);
