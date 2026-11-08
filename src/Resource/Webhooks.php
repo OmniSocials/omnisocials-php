@@ -57,7 +57,13 @@ class Webhooks extends AbstractResource
      * Works on organisation-wide webhooks too. `['is_active' => true]`
      * switches on a webhook that was switched off (also an automatic
      * switch-off); setting `url`, `events` or switching it on makes the
-     * key's creator the person behind the webhook.
+     * key's creator the person behind the webhook. Setting `url` on an
+     * organisation-wide webhook (even its current one) moves it to the
+     * key's workspace: from then on it gets only that workspace's events,
+     * and the answer shows the new `workspace_id`. When the webhook has Ads
+     * events after the change, setting `url` or `events` or switching it on
+     * needs the `ads:read` scope and `access_ads` for the key's creator (403
+     * otherwise, nothing changed).
      *
      * @param array{url?: string, events?: string[], is_active?: bool} $params
      */

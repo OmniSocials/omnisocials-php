@@ -550,6 +550,37 @@ $requests = $stub([429, 200]);
 $ads->objects->setStatus(12, 'campaign', '238', 'active', 25);
 check(count($requests()) === 2, 'ads->objects->setStatus after a 429 is retried');
 
+echo "\n== Path segments: an id stays inside one encoded segment ==\n";
+$pathClient = new Client(apiKey: 'omsk_test_x', baseUrl: "http://127.0.0.1:{$port}/v1", maxRetries: 0);
+$requests = $stub([200]);
+$pathClient->posts->publish('../webhooks/wh_fake/rotate-secret#');
+$sent = $requests();
+check(
+    $sent[0]['method'] === 'POST'
+        && $sent[0]['uri'] === '/v1/posts/..%2Fwebhooks%2Fwh_fake%2Frotate-secret%23/publish',
+    'posts->publish keeps a hostile id inside one segment'
+);
+$requests = $stub([200]);
+foreach (['', '.', '..'] as $bad) {
+    foreach ([
+        'posts->delete' => static fn () => $pathClient->posts->delete($bad),
+        'webhooks->rotateSecret' => static fn () => $pathClient->webhooks->rotateSecret($bad),
+        'inbox->markRead' => static fn () => $pathClient->inbox->markRead($bad),
+        'ads->drafts->get' => static fn () => $pathClient->ads->drafts->get($bad),
+    ] as $name => $call) {
+        try {
+            $call();
+            check(false, "{$name}('{$bad}') is refused");
+        } catch (OmniSocialsException $e) {
+            check(
+                str_starts_with($e->getMessage(), 'Invalid request path'),
+                "{$name}('{$bad}') is refused before sending"
+            );
+        }
+    }
+}
+check($requests() === [], 'a refused id sends nothing');
+
 proc_terminate($server);
 proc_close($server);
 array_map('unlink', glob($stubDir . '/*') ?: []);
@@ -697,5 +728,6 @@ echo "- Client constructs with named args, env fallback via getenv, missing key 
 echo "- 11 resources expose all DESIGN.md inventory methods plus health(), and ads->drafts its 7\n";
 echo "- Ads calls send the right method, path and body; spend calls are sent once after a 502 or a timeout\n";
 echo "- Ads API parity: 20 sub-resources + 2 campaign calls cover the 108 routes; the 10 new spend calls are sent once after a 502\n";
+echo "- An id stays inside one encoded path segment; an id of \"\", \".\" or \"..\" is refused before sending\n";
 echo "- Exception hierarchy and status mapping correct (RateLimitException::getRetryAfter works)\n";
 echo "- Webhook signature: accepts valid, rejects tampered/stale/wrong-secret/malformed/non-JSON; the Previous header verifies with the old secret\n";

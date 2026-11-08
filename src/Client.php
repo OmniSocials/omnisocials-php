@@ -7,6 +7,7 @@ namespace OmniSocials;
 use OmniSocials\Exception\ApiConnectionException;
 use OmniSocials\Exception\ApiException;
 use OmniSocials\Exception\AuthenticationException;
+use OmniSocials\Exception\OmniSocialsException;
 
 /**
  * The OmniSocials API client.
@@ -25,7 +26,7 @@ use OmniSocials\Exception\AuthenticationException;
  */
 class Client
 {
-    public const VERSION = '0.16.0';
+    public const VERSION = '0.17.0';
     public const DEFAULT_BASE_URL = 'https://api.omnisocials.com/v1';
     public const DEFAULT_TIMEOUT = 30.0;
     public const DEFAULT_MAX_RETRIES = 2;
@@ -258,7 +259,21 @@ class Client
 
     private function buildUrl(string $path, array $query): string
     {
-        $url = $this->baseUrl . (str_starts_with($path, '/') ? $path : '/' . $path);
+        $path = str_starts_with($path, '/') ? $path : '/' . $path;
+        // Every id in $path was encoded with rawurlencode, which leaves "." and
+        // ".." as they are: URL normalisation drops such a segment or climbs
+        // one level, so an id of ".." would reach another endpoint of the same
+        // API key, and an empty id the list route. Refused before sending.
+        $segments = array_slice(explode('/', explode('?', $path, 2)[0]), 1);
+        foreach ($segments as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                throw new OmniSocialsException(sprintf(
+                    'Invalid request path %s: an id cannot be empty, "." or "..".',
+                    json_encode($path, JSON_UNESCAPED_SLASHES)
+                ));
+            }
+        }
+        $url = $this->baseUrl . $path;
         $pairs = [];
         foreach ($query as $key => $value) {
             if ($value === null) {
