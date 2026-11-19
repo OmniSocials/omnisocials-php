@@ -197,7 +197,8 @@ class Posts extends AbstractResource
      * 'limits' => ['max_sends' => 500], 'platforms' => ['instagram',
      * 'facebook']]` (see `$client->automations->create()` for the fields,
      * also `'follow_gate'` in `actions`, Follow first, which applies to the
-     * Instagram automation only). `platforms` makes one automation per
+     * Instagram automation only, and `'follow_up'`, the follow-up, which
+     * applies to both). `platforms` makes one automation per
      * listed channel; each must be a
      * channel of the post. Without it: Instagram when the post goes there,
      * else Facebook. Needs the `automations:write` scope on the key
@@ -278,7 +279,8 @@ class Posts extends AbstractResource
      * `comment_dm_automation` (same shape as on `create()`) as an array
      * replaces the post's comment-to-DM automations (a channel no longer in
      * `platforms` loses its automation), `['comment_dm_automation' => null]`
-     * removes them all, and omitting the key leaves them untouched. Needs
+     * removes them all, and omitting the key leaves them untouched. An
+     * `actions` without `'follow_up'` keeps the stored follow-up. Needs
      * the `automations:write` scope.
      *
      * `discord` merges into the stored Discord options: a key set to `null`
