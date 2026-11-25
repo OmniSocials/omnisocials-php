@@ -815,6 +815,21 @@ while ($next['data'] !== null) {
 }
 ```
 
+### Tag the commenter on Facebook
+
+On a Facebook comment, pass `'mention_author' => true` to `reply` and OmniSocials puts the tag `@[<commenter id>]` before your text: the reply starts with the commenter's name as a clickable link, and Facebook notifies them. Do not write the name or `@[id]` yourself. The answer then carries `mention` with `$result['mention']['status']`: `tagged` (clickable tag), `plain_name` (Facebook did not accept the tag; the reply was edited to start with "@Name" as plain text), `failed` (the reply can show the raw `@[id]` text: delete it with `deleteMessage($result['data']['id'])` and send it again without the option) or `unverified` (posted, but not checked). Only comments on the Facebook Page's own posts; any other conversation answers 400 `mention_not_supported` and nothing is sent.
+
+```php
+$result = $client->inbox->reply($item['message']['conversation_id'], [
+    'text' => 'Thanks, we ship to Belgium too!',
+    'message_id' => $item['message']['id'],
+    'mention_author' => true, // Facebook comments only; do not write the name yourself
+]);
+if ($result['mention']['status'] !== 'tagged') {
+    echo $result['mention']['message'], "\n";
+}
+```
+
 ### X DM replies use credits
 
 X DM conversations (`platform` = `x`, `type` always `dm`) cost credits to reply to: each `reply()` send debits **2 prepaid credits** (X's send fee, passed through at cost) before sending, auto-refunded if the send fails. Two `402` error codes are specific to `reply()`:

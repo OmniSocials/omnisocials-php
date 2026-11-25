@@ -130,12 +130,26 @@ class Inbox extends AbstractResource
      * waiting) and `remaining` in the response. Saves the extra call when
      * working through the inbox.
      *
+     * Facebook comment replies: pass `mention_author` => true to tag the
+     * commenter. OmniSocials puts `@[<commenter id>]` before the text, so
+     * the reply starts with their name as a clickable link and Facebook
+     * notifies them; do not write the name yourself. The response then
+     * carries `mention` (`status`, `name`, `message`), where `status` is
+     * `tagged` (clickable tag, person notified), `plain_name` (Facebook did
+     * not accept the tag; the reply was edited to start with "@Name" as
+     * plain text), `failed` (the tag and the edit failed; the reply can show
+     * the raw `@[id]` text: delete it with `deleteMessage($result['data']['id'])`
+     * and send it again without `mention_author`) or `unverified` (posted,
+     * but the tag could not be checked). Any other conversation throws 400
+     * `mention_not_supported` and nothing is sent.
+     *
      * @param array{
      *     text?: string,
      *     attachment_url?: string,
      *     attachment_type?: 'image'|'video'|'audio'|'file',
      *     message_id?: string,
-     *     include_next?: bool
+     *     include_next?: bool,
+     *     mention_author?: bool
      * } $params On Facebook and Instagram DMs, pass `attachment_url` (with
      *           `attachment_type`) to include media; `text` is optional
      *           when `attachment_url` is set (an attachment-only reply is
